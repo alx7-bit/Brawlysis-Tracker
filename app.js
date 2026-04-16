@@ -787,11 +787,9 @@ function purgeNonRotationMatches(silent = false) {
     return purged;
 }
 
-// ======================================
 // SYNC LOGIC (Supercell Official API)
 // ======================================
 let lastSyncTime = null;
-let isSyncing = false;
 
 async function checkIP(errData) {
     if (errData.message && errData.message.includes('Invalid IP')) {
@@ -1045,8 +1043,6 @@ async function syncBattlelog() {
             syncStatus.textContent = statusParts.length > 0
                 ? `${statusParts.join(', ')} • ${timeStr}`
                 : `Up to date • ${timeStr}`;
-        }
-        
         }
         
     } catch (err) {
