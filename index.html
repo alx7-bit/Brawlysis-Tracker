@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brawl Stars Match Tracker</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>Brawl<span>Stats</span></h2>
+            </div>
+            <ul class="nav-links">
+                <li data-view="dashboard" class="active">Dashboard</li>
+                <li data-view="matches">Match History</li>
+                <li data-view="analytics">Map Analytics</li>
+                <li data-view="collection">Collection</li>
+                <li data-view="resources">Resources</li>
+                <li data-view="settings">Settings (Map Pool)</li>
+            </ul>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header>
+                <h1>Welcome, Brawler</h1>
+                <button id="add-match-btn" class="primary-btn">+ Add Match</button>
+            </header>
+
+            <!-- Dashboard View -->
+            <section id="dashboard" class="view active">
+                <!-- Player Profile Card -->
+                <div class="stat-card" id="profile-card" style="margin-bottom: 2rem; display: flex; align-items: center; justify-content: space-between; padding: 1.5rem; background: linear-gradient(135deg, rgba(36, 214, 255, 0.1) 0%, var(--bg-surface) 100%);">
+                    <div id="profile-unlinked" style="display: flex; align-items: center; gap: 1rem; width: 100%;">
+                        <div style="width: 50px; height: 50px; border-radius: 50%; background: var(--bg-dark); display: flex; align-items: center; justify-content: center; border: 2px dashed rgba(255,255,255,0.2);">?</div>
+                        <div>
+                            <h3 style="margin-bottom: 0.25rem;">No Account Linked</h3>
+                            <p style="color: var(--text-muted); font-size: 0.9rem;">Link your Brawl Stars identity to personalize your tracker.</p>
+                        </div>
+                        <button id="open-link-modal-btn" class="primary-btn" style="margin-left: auto;">Link Account</button>
+                    </div>
+
+                    <div id="profile-linked" style="display: none; align-items: center; gap: 1.5rem; width: 100%;">
+                        <img id="profile-avatar" src="https://cdns.iconmonstr.com/wp-content/releases/preview/2012/240/iconmonstr-user-1.png" alt="Profile" style="width: 80px; height: 80px; border-radius: var(--radius-sm); border: 2px solid var(--accent-blue); object-fit: cover; box-shadow: 0 0 15px rgba(36, 214, 255, 0.2);">
+                        <div style="flex: 1;">
+                            <h3 id="profile-username" style="font-size: 1.8rem; margin-bottom: 0.2rem; display: flex; align-items: center; gap: 0.5rem;">Username <span id="profile-club" style="font-size: 0.9rem; color: var(--accent-pink); padding: 2px 6px; border: 1px solid var(--accent-pink); border-radius: var(--radius-sm); display: none;">Club</span></h3>
+                            <p id="profile-tag" style="color: var(--text-muted); font-family: monospace; font-size: 1rem; margin-bottom: 0.5rem;">#TAG</p>
+                            <div id="profile-live-stats" style="display: flex; gap: 1.5rem; display: none;">
+                                <div><strong style="color: var(--text-main)" id="profile-trophies">0</strong> <span style="color: var(--text-muted); font-size: 0.85rem;">Trophies</span></div>
+                                <div><strong style="color: var(--text-main)" id="profile-highest">0</strong> <span style="color: var(--text-muted); font-size: 0.85rem;">Highest</span></div>
+                                <div><strong style="color: var(--text-main)" id="profile-3v3">0</strong> <span style="color: var(--text-muted); font-size: 0.85rem;">3v3 Wins</span></div>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <button id="edit-profile-btn" style="background: none; border: 1px solid rgba(255,255,255,0.2); color: var(--text-main); padding: 0.5rem 1rem; border-radius: var(--radius-sm); cursor: pointer; transition: 0.2s;">Edit Link</button>
+                            <div id="api-status-badge" style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted); display: none;">API Syncing...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card win-rate-card">
+                        <h3>Overall Win Rate</h3>
+                        <div class="circular-progress" id="overall-winrate-circle">
+                            <span class="progress-value" id="overall-winrate-text">0%</span>
+                        </div>
+                        <p class="match-count" id="overall-match-count">0 Matches Played</p>
+                    </div>
+                    
+                    <div class="stat-card recent-brawlers">
+                        <h3>Top Brawlers</h3>
+                        <ul id="top-brawlers-list">
+                            <li class="empty-state">No matches recorded yet.</li>
+                        </ul>
+                    </div>
+
+                    <div class="stat-card recent-modes">
+                        <h3>Best Modes</h3>
+                        <ul id="best-modes-list">
+                            <li class="empty-state">No matches recorded yet.</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Matches View -->
+            <section id="matches" class="view">
+                <div class="header-with-actions" style="margin-bottom: 1rem;">
+                    <h2 style="display: flex; align-items: center; gap: 1rem;">Match History
+                        <span id="sync-indicator" style="font-size: 0.8rem; color: var(--accent-blue); padding: 4px 8px; background: rgba(36, 214, 255, 0.1); border-radius: var(--radius-sm); border: 1px solid rgba(36,214,255,0.2); display: flex; align-items: center; gap: 0.5rem; display: none;">
+                            <div class="pulsing-dot" style="width: 8px; height: 8px; background: var(--accent-blue); border-radius: 50%; box-shadow: 0 0 8px var(--accent-blue);"></div> Syncing...
+                        </span>
+                    </h2>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span id="sync-status-text" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+                        <button id="sync-now-btn" class="primary-btn" style="padding: 0.5rem 1rem; font-size: 0.85rem;" title="Force sync battlelog now">⟳ Sync Now</button>
+                    </div>
+                </div>
+
+                <!-- Connection Debugger (New) -->
+                <div id="connection-helper" style="margin-bottom: 2rem; padding: 1rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+                    <div>
+                        <h4 style="font-size: 0.9rem; margin-bottom: 0.2rem; color: var(--accent-blue);">Connection Troubleshooting</h4>
+                        <p style="font-size: 0.8rem; color: var(--text-muted);">Sync failing? Check if your browser IP matches your Supercell API key.</p>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span id="ip-display" style="font-family: monospace; font-size: 0.85rem; color: var(--text-main); background: var(--bg-surface); padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border-color); display: none;"></span>
+                        <button id="check-ip-btn" onclick="handleCheckIP()" style="background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-main); font-size: 0.8rem; padding: 6px 12px; border-radius: 4px; cursor: pointer;">Check Browser IP</button>
+                    </div>
+                </div>
+                <button id="clear-all-btn" class="danger-btn">Clear All</button>
+                    </div>
+                </div>
+
+                <!-- Match Log Sub-Tabs -->
+                <div class="sub-tabs-bar" style="display: flex; gap: 1rem; margin-bottom: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; position: relative; z-index: 50;">
+                    <button class="sub-tab active" data-tab="ranked" onclick="switchMatchTab('ranked')" style="background: none; border: none; color: var(--text-muted); padding: 0.5rem 1rem; cursor: pointer; position: relative; font-weight: 600; transition: color 0.3s; z-index: 51;">
+                        Ranked
+                        <div class="tab-indicator" style="position: absolute; bottom: -0.6rem; left: 0; width: 100%; height: 2px; background: var(--accent-blue); display: block;"></div>
+                    </button>
+                    <button class="sub-tab" data-tab="trophy" onclick="switchMatchTab('trophy')" style="background: none; border: none; color: var(--text-muted); padding: 0.5rem 1rem; cursor: pointer; position: relative; font-weight: 600; transition: color 0.3s; z-index: 51;">
+                        Trophy
+                        <div class="tab-indicator" style="position: absolute; bottom: -0.6rem; left: 0; width: 100%; height: 2px; background: var(--accent-blue); display: none;"></div>
+                    </button>
+                </div>
+                <div class="matches-list" id="matches-list-container">
+                    <div class="empty-state">No matches recorded. Click "+ Add Match" to get started!</div>
+                </div>
+            </section>
+
+            <!-- Map Analytics View -->
+            <section id="analytics" class="view">
+                <div class="header-with-actions">
+                    <h2>Map Analytics</h2>
+                </div>
+                
+                <div style="margin-bottom: 2rem; position: relative; z-index: 50;">
+                    <h3 style="margin-bottom: 1rem; color: var(--text-muted); font-size: 1.1rem; font-weight: 600;">Select a Map</h3>
+                    <!-- Reused Custom Dropdown Structure -->
+                    <div class="custom-dropdown" id="analytics-map-dropdown">
+                        <div class="dropdown-header">
+                            <img src="" id="analytics-map-selected-icon" class="dropdown-icon" alt="Selected Map" style="display: none;">
+                            <input type="text" id="analytics-map-search" placeholder="Search played maps..." autocomplete="off">
+                            <span class="dropdown-arrow">▼</span>
+                        </div>
+                        <div class="dropdown-options" id="analytics-map-options">
+                            <!-- Options populate dynamically -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Brawler Performance</h3>
+                    <ul class="stats-list" id="analytics-brawlers-list" style="margin-top: 1rem;">
+                        <li class="empty-state">Select a map above to see brawler win rates.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Collection View -->
+            <section id="collection" class="view">
+                <div class="header-with-actions">
+                    <h2>Brawler Progression</h2>
+                    <div id="collection-count" style="color: var(--text-muted); font-size: 0.9rem;"></div>
+                </div>
+                <div id="collection-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; margin-top: 2rem;">
+                    <!-- Collection Cards dynamically placed here -->
+                    <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); margin-top: 3rem;">
+                        Waiting for API Live Sync...
+                    </div>
+                </div>
+            </section>
+
+            <!-- Resources View -->
+            <section id="resources" class="view">
+                <div class="header-with-actions">
+                    <h2>Resource Tracker</h2>
+                    <div id="resources-last-updated" style="color: var(--text-muted); font-size: 0.85rem;"></div>
+                </div>
+
+                <!-- Resource Summary Cards -->
+                <div class="resource-summary-grid">
+                    <div class="resource-card" data-resource="coins">
+                        <div class="resource-icon">🪙</div>
+                        <div class="resource-info">
+                            <span class="resource-label">Coins</span>
+                            <span class="resource-value" id="res-coins-val">0</span>
+                        </div>
+                    </div>
+                    <div class="resource-card" data-resource="powerpoints">
+                        <div class="resource-icon">⚡</div>
+                        <div class="resource-info">
+                            <span class="resource-label">Power Points</span>
+                            <span class="resource-value" id="res-pp-val">0</span>
+                        </div>
+                    </div>
+                    <div class="resource-card" data-resource="gems">
+                        <div class="resource-icon">💎</div>
+                        <div class="resource-info">
+                            <span class="resource-label">Gems</span>
+                            <span class="resource-value" id="res-gems-val">0</span>
+                        </div>
+                    </div>
+                    <div class="resource-card" data-resource="bling">
+                        <div class="resource-icon">✨</div>
+                        <div class="resource-info">
+                            <span class="resource-label">Bling</span>
+                            <span class="resource-value" id="res-bling-val">0</span>
+                        </div>
+                    </div>
+                    <div class="resource-card" data-resource="credits">
+                        <div class="resource-icon">🎫</div>
+                        <div class="resource-info">
+                            <span class="resource-label">Credits</span>
+                            <span class="resource-value" id="res-credits-val">0</span>
+                        </div>
+                    </div>
+                    <div class="resource-card" data-resource="stardrops">
+                        <div class="resource-icon">⭐</div>
+                        <div class="resource-info">
+                            <span class="resource-label">Star Drops</span>
+                            <span class="resource-value" id="res-stardrops-val">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Manual Update Form -->
+                <div class="stat-card" style="max-width: 700px; margin-top: 2rem; align-items: flex-start;">
+                    <h3 style="margin-bottom: 0.5rem;">Update Resources</h3>
+                    <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">The Brawl Stars API does not expose wallet data. Manually enter your current amounts below to keep track.</p>
+                    <form id="resource-form" style="width: 100%;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                            <div class="form-group">
+                                <label>🪙 Coins</label>
+                                <input type="number" id="res-coins-input" min="0" value="0" class="resource-input">
+                            </div>
+                            <div class="form-group">
+                                <label>⚡ Power Points</label>
+                                <input type="number" id="res-pp-input" min="0" value="0" class="resource-input">
+                            </div>
+                            <div class="form-group">
+                                <label>💎 Gems</label>
+                                <input type="number" id="res-gems-input" min="0" value="0" class="resource-input">
+                            </div>
+                            <div class="form-group">
+                                <label>✨ Bling</label>
+                                <input type="number" id="res-bling-input" min="0" value="0" class="resource-input">
+                            </div>
+                            <div class="form-group">
+                                <label>🎫 Credits</label>
+                                <input type="number" id="res-credits-input" min="0" value="0" class="resource-input">
+                            </div>
+                            <div class="form-group">
+                                <label>⭐ Star Drops</label>
+                                <input type="number" id="res-stardrops-input" min="0" value="0" class="resource-input">
+                            </div>
+                        </div>
+                        <button type="submit" class="primary-btn" style="margin-top: 1.5rem;">💾 Save Resources</button>
+                        <div id="res-save-msg" style="color: var(--color-win); margin-top: 1rem; display: none;">Resources saved!</div>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Settings View -->
+            <section id="settings" class="view">
+                <div class="header-with-actions">
+                    <h2>Configuration & Settings</h2>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; max-width: 1000px;">
+                    <!-- Map Pool Config -->
+                    <div class="stat-card" style="align-items: flex-start;">
+                        <h3 style="margin-bottom: 1rem;">Manage Ranked Pool</h3>
+                        <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">Since the Brawl Stars Ranked Map pool rotates every month, you can customize exactly which maps appear in your dropdown here. Type one map name per line.</p>
+                        <textarea id="map-pool-input" rows="18" style="width: 100%; background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 1rem; font-family: var(--font-main); resize: vertical; margin-bottom: 1rem;"></textarea>
+                        <button id="save-pool-btn" class="primary-btn">Save Map Pool to Memory</button>
+                        <div id="save-pool-msg" style="color: var(--color-win); margin-top: 1rem; display: none;">Saved successfully!</div>
+                    </div>
+
+                    <!-- Developer API Config -->
+                    <div class="stat-card" style="align-items: flex-start; height: fit-content;">
+                        <h3 style="margin-bottom: 1rem; color: var(--accent-pink);">Live API Syncing Configuration</h3>
+                        <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">Unlock live data fetching directly from Supercell. Generate a free API token from <a href="https://developer.brawlstars.com/" target="_blank" style="color: var(--accent-blue);">developer.brawlstars.com</a> and paste it below. <i>Your key is automatically saved to local storage.</i></p>
+                        
+                        <div class="form-group" style="width: 100%;">
+                            <label>Official Brawl Stars Bearer Token</label>
+                            <input type="password" id="api-token-input" placeholder="eyJ0eXAiOiJKV1QiLCJhbGciOi..." style="width: 100%; background: var(--bg-dark); padding: 0.8rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-main); font-family: monospace; margin-bottom: 1rem;">
+                        </div>
+                        
+                        <button id="save-api-btn" class="primary-btn" style="background-color: var(--accent-pink);">Enable Live Sync</button>
+                        <div id="save-api-msg" style="color: var(--color-win); margin-top: 1rem; display: none;">Token saved. Refreshing profile...</div>
+                        <div id="analytics-error" style="color: var(--color-loss); margin-top: 1rem; text-align: center; display: none;"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Add Match Modal -->
+    <div class="modal-overlay" id="add-match-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Record New Match</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="add-match-form">
+                <div class="form-group">
+                    <label>Brawler</label>
+                    <div class="custom-dropdown" id="brawler-dropdown">
+                        <div class="dropdown-header">
+                            <img id="brawler-selected-icon" class="dropdown-icon" src="" style="display: none;">
+                            <input type="text" id="brawler-search" placeholder="Loading Brawlers..." autocomplete="off">
+                        </div>
+                        <div class="dropdown-options" id="brawler-options"></div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Game Mode & Map</label>
+                    <div class="custom-dropdown" id="mode-dropdown">
+                        <div class="dropdown-header">
+                            <img id="mode-selected-icon" class="dropdown-icon" src="" style="display: none;">
+                            <input type="text" id="mode-search" placeholder="Loading Events..." autocomplete="off">
+                        </div>
+                        <div class="dropdown-options" id="mode-options"></div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Result</label>
+                    <div class="result-toggle">
+                        <input type="radio" id="result-win" name="result" value="win" checked>
+                        <label for="result-win" class="btn-win">Victory</label>
+                        
+                        <input type="radio" id="result-loss" name="result" value="loss">
+                        <label for="result-loss" class="btn-loss">Defeat</label>
+
+                        <input type="radio" id="result-draw" name="result" value="draw">
+                        <label for="result-draw" class="btn-draw">Draw</label>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn-cancel close-modal">Cancel</button>
+                    <button type="submit" class="primary-btn">Save Match</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Link Account Modal -->
+    <div class="modal-overlay" id="link-account-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Link Your Account</h3>
+                <span class="close-modal" id="close-link-btn">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="link-account-form">
+                    <div class="form-group">
+                        <label>In-Game Username</label>
+                        <input type="text" id="link-username" required placeholder="e.g. SpikeLover99" style="width: 100%; background: var(--bg-surface); padding: 0.8rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-main); font-family: var(--font-main);">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Player Tag</label>
+                        <input type="text" id="link-tag" required placeholder="e.g. #P0LYQG29" style="width: 100%; background: var(--bg-surface); padding: 0.8rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-main); font-family: var(--font-main);">
+                    </div>
+
+                    <div class="form-group" style="padding: 1rem; background: rgba(36, 214, 255, 0.05); border-radius: var(--radius-sm); border: 1px solid rgba(36, 214, 255, 0.1);">
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0;"><strong>Pro Tip:</strong> Currently, this just links your identity visually in the app. Full API syncing functionality requires a developer key to be entered in Settings.</p>
+                    </div>
+
+                    <button type="submit" class="primary-btn" style="width: 100%; margin-top: 1rem;">Save Link</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

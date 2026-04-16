@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/official/:path*",
+      "destination": "https://api.brawlstars.com/v1/:path*"
+    }
+  ]
+}
