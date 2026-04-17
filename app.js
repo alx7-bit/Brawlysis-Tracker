@@ -15,29 +15,6 @@ function normalizeBrawlerName(name) {
         .replace(/[^A-Z0-9]/g, ''); // strip ALL non-alphanumeric
 }
 
-// Universal API Fetcher
-// Auto-detects standalone browser mode and falls back to a direct CORS fetch
-async function smartBrawlFetch(endpoint) {
-    const headers = { 'Authorization': `Bearer ${officialApiKey}` };
-    const isLocalFile = window.location.protocol === 'file:';
-    const isGithubHost = window.location.hostname.includes('github.io');
-    
-    if (isLocalFile || isGithubHost) {
-        try {
-            // Try standard route through local python server (if local)
-            const res = await fetch(`http://127.0.0.1:8000/api/official${endpoint}`, { headers });
-            return res;
-        } catch (err) {
-            // Fallback: Direct connection (Requires CORS Unblocker Extension installed in Chrome)
-            console.warn("[Network] Local proxy unreachable or unsupported. Attempting direct API fetch via browser extension...");
-            return await fetch(`https://api.brawlstars.com/v1${endpoint}`, { headers });
-        }
-    } else {
-        // Hosted on Vercel/Netlify with built-in proxy routes
-        return await fetch(`/api/official${endpoint}`, { headers });
-    }
-}
-
 // Browser IP Detection Helper
 async function getBrowserIP() {
     try {
@@ -46,6 +23,32 @@ async function getBrowserIP() {
         return data.ip || 'Unknown';
     } catch (err) {
         return 'Detection Failed (Check VPN/CORS)';
+    }
+}
+
+// Universal API Fetcher
+// Auto-detects standalone browser mode and falls back to a direct CORS fetch
+// Includes auto-cache-busting to prevent Chrome from holding onto old stats
+async function smartBrawlFetch(endpoint) {
+    const headers = { 'Authorization': `Bearer ${officialApiKey}` };
+    const isLocalFile = window.location.protocol === 'file:';
+    const isGithubHost = window.location.hostname.includes('github.io');
+    
+    // HTTP requests are hard-blocked by HTTPS websites (Mixed Content), so we skip the proxy check on GitHub
+    if (isLocalFile) {
+        try {
+            // Try standard route through local python server
+            return await fetch(`http://127.0.0.1:8000/api/official${endpoint}`, { headers, cache: 'no-store' });
+        } catch (err) {
+            console.warn("[Network] Local proxy unreachable. Attempting direct API fetch via browser extension...");
+            return await fetch(`https://api.brawlstars.com/v1${endpoint}`, { headers, cache: 'no-store' });
+        }
+    } else if (isGithubHost) {
+        // Fallback: Direct connection (Requires CORS Unblocker Extension installed in Chrome)
+        return await fetch(`https://api.brawlstars.com/v1${endpoint}`, { headers, cache: 'no-store' });
+    } else {
+        // Hosted on Vercel/Netlify with built-in proxied routes
+        return await fetch(`/api/official${endpoint}`, { headers, cache: 'no-store' });
     }
 }
 
@@ -584,10 +587,10 @@ async function fetchLiveProfile() {
         if (res.status === 403 || data.reason === "accessDenied") {
             apiStatusBadge.style.color = 'var(--color-loss)';
             
-            // Extract the IP from Supercell's error message (e.g., "Invalid IP: 1.2.3.4")
+            // Extract the IP from Supercell's error message (e.g., "Invalid IP: 1.2.3.4" or IPv6)
             let requiredIp = "your current IP";
             if (data.message && data.message.includes('Invalid IP')) {
-                const ipMatch = data.message.match(/Invalid IP:? ([\d\.]+)/);
+                const ipMatch = data.message.match(/Invalid IP:?\s*([0-9a-fA-F:\.]+)/);
                 if (ipMatch) requiredIp = `IP ${ipMatch[1]}`;
             }
             
@@ -792,8 +795,9 @@ function purgeNonRotationMatches(silent = false) {
 let lastSyncTime = null;
 
 async function checkIP(errData) {
-    if (errData.message && errData.message.includes('Invalid IP')) {
-        const ipMatch = errData.message.match(/Invalid IP:? ([\d\.]+)/);
+    if (errData && errData.message && errData.message.includes('Invalid IP')) {
+        // Catch both IPv4 and modern IPv6 addresses
+        const ipMatch = errData.message.match(/Invalid IP:?\s*([0-9a-fA-F:\.]+)/);
         return ipMatch ? `IP ${ipMatch[1]}` : "your current IP";
     }
     return "your current IP";
@@ -860,11 +864,7 @@ async function syncBattlelog() {
                 try {
                     const errData = await res.json();
                     if (res.status === 403) {
-                        let requiredIp = "your current IP";
-                        if (errData.message && errData.message.includes('Invalid IP')) {
-                            const ipMatch = errData.message.match(/Invalid IP:? ([\d\.]+)/);
-                            if (ipMatch) requiredIp = `IP ${ipMatch[1]}`;
-                        }
+                        let requiredIp = await checkIP(errData);
                         errorMsg = `⚠️ API key expired — regenerate for ${requiredIp}`;
                         console.error('[Sync] 403 Forbidden:', errData.hint || errData.message || 'IP mismatch');
                     } else if (errData.message) {
