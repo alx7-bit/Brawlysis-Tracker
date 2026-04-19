@@ -38,23 +38,35 @@ function getProxyBaseUrl() {
 }
 
 function isNetworkOrCorsFailure(err) {
-    return err && (err.name === 'TypeError' || /Failed to fetch|NetworkError|Load failed/i.test(String(err.message || '')));
+    if (!err) return false;
+    if (err.name === 'AbortError') return true;
+    if (err.name === 'TypeError') return true;
+    return /Failed to fetch|NetworkError|Load failed|aborted|timeout/i.test(String(err.message || ''));
 }
+
+const OFFICIAL_API_FETCH_MS = 30000;
 
 // Official Supercell API — always via same-origin or configured proxy (server forwards Authorization).
 async function smartBrawlFetch(endpoint) {
     const headers = { 'Authorization': `Bearer ${officialApiKey}` };
     const base = getProxyBaseUrl();
     const url = `${base}/api/official${endpoint}`;
-    if (window.location.protocol === 'file:') {
-        try {
-            return await fetch(url, { headers, cache: 'no-store' });
-        } catch (err) {
-            console.warn('[Network] Local proxy unreachable:', err);
-            throw err;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), OFFICIAL_API_FETCH_MS);
+    const opts = { headers, cache: 'no-store', signal: ctrl.signal };
+    try {
+        if (window.location.protocol === 'file:') {
+            try {
+                return await fetch(url, opts);
+            } catch (err) {
+                console.warn('[Network] Local proxy unreachable:', err);
+                throw err;
+            }
         }
+        return await fetch(url, opts);
+    } finally {
+        clearTimeout(timer);
     }
-    return fetch(url, { headers, cache: 'no-store' });
 }
 
 /** BrawlAPI (brawlers/maps) — try proxy first, then public API if the host has no rewrite. */
@@ -644,9 +656,18 @@ async function fetchLiveProfile() {
             return;
         }
 
-        const data = await res.json();
-        
-        if (data.trophies) {
+        let data;
+        try {
+            data = await res.json();
+        } catch (parseErr) {
+            apiStatusBadge.style.color = 'var(--color-loss)';
+            apiStatusBadge.textContent = 'Bad response from proxy (not JSON). Redeploy or check Vercel logs.';
+            console.error(parseErr);
+            return;
+        }
+
+        // Note: `if (data.trophies)` is wrong — trophy count can be 0 and is still valid.
+        if (typeof data.trophies === 'number') {
             // Update successful
             apiStatusBadge.style.color = 'var(--color-win)';
             apiStatusBadge.textContent = 'Live Synced ✓';
@@ -654,7 +675,7 @@ async function fetchLiveProfile() {
             // Map JSON response to UI
             profileLiveStats.style.display = 'flex';
             profileTrophies.textContent = data.trophies.toLocaleString();
-            profileHighest.textContent = data.highestTrophies.toLocaleString();
+            profileHighest.textContent = (data.highestTrophies ?? 0).toLocaleString();
             profile3v3.textContent = (data['3vs3Victories'] || 0).toLocaleString();
             
             // Sync Profile Icon from API
@@ -679,12 +700,19 @@ async function fetchLiveProfile() {
             
             // Wait 3 seconds and fade out the badge for cleanliness
             setTimeout(() => { apiStatusBadge.style.display = 'none'; }, 3000);
+        } else {
+            apiStatusBadge.style.color = 'var(--color-loss)';
+            const msg = [data.reason, data.message].filter(Boolean).join(' — ') || 'Unexpected API response (no player data). Check player tag.';
+            apiStatusBadge.textContent = msg;
+            console.warn('[Profile] OK but not a player JSON:', data);
         }
         
     } catch (err) {
         apiStatusBadge.style.color = 'var(--color-loss)';
         if (window.location.protocol === 'file:') {
             apiStatusBadge.textContent = 'Run Launch.bat (local proxy) or open the deployed site on Vercel/Netlify.';
+        } else if (err.name === 'AbortError') {
+            apiStatusBadge.textContent = `Request timed out (${OFFICIAL_API_FETCH_MS / 1000}s). Proxy or upstream API is slow or unreachable.`;
         } else if (isNetworkOrCorsFailure(err)) {
             apiStatusBadge.textContent = 'Cannot reach API proxy. If you use GitHub Pages, set “Proxy site URL” to your Vercel deployment of this repo.';
         } else {
