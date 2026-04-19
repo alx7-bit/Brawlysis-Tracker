@@ -44,6 +44,24 @@ function isNetworkOrCorsFailure(err) {
     return /Failed to fetch|NetworkError|Load failed|aborted|timeout/i.test(String(err.message || ''));
 }
 
+/** IPv4/IPv6 from Supercell error text (e.g. "from IP 1.2.3.4" or "Invalid IP: …"). */
+function extractIpFromApiMessage(msg) {
+    if (!msg || typeof msg !== 'string') return null;
+    let m = msg.match(/Invalid IP:?\s*([0-9a-fA-F:\.]+)/i);
+    if (m) return m[1].trim();
+    m = msg.match(/from IP\s+([0-9a-fA-F:\.]+)/i);
+    if (m) return m[1].trim();
+    return null;
+}
+
+function keyIpWhitelistHint(message) {
+    const ip = extractIpFromApiMessage(String(message || ''));
+    if (ip) {
+        return `Whitelist ${ip} for this key at developer.brawlstars.com (server IP Supercell sees — not your home Wi‑Fi).`;
+    }
+    return 'Allowed IP list for this key at developer.brawlstars.com must include the proxy server IP Supercell sees.';
+}
+
 const OFFICIAL_API_FETCH_MS = 30000;
 
 // Official Supercell API — always via same-origin or configured proxy (server forwards Authorization).
@@ -638,13 +656,8 @@ async function fetchLiveProfile() {
                 try {
                     const errData = await res.json();
                     if (res.status === 403) {
-                        let requiredIp = 'your current IP';
-                        if (errData.message && errData.message.includes('Invalid IP')) {
-                            const ipMatch = errData.message.match(/Invalid IP:?\s*([0-9a-fA-F:\.]+)/);
-                            if (ipMatch) requiredIp = `IP ${ipMatch[1]}`;
-                        }
                         apiStatusBadge.style.color = 'var(--color-loss)';
-                        apiStatusBadge.textContent = `⚠️ API key — regenerate for ${requiredIp} at developer.brawlstars.com`;
+                        apiStatusBadge.textContent = `⚠️ ${keyIpWhitelistHint(errData.message)}`;
                         console.error('[Profile] 403:', errData.message || errData);
                         return;
                     }
@@ -663,6 +676,14 @@ async function fetchLiveProfile() {
             apiStatusBadge.style.color = 'var(--color-loss)';
             apiStatusBadge.textContent = 'Bad response from proxy (not JSON). Redeploy or check Vercel logs.';
             console.error(parseErr);
+            return;
+        }
+
+        // Supercell sometimes returns HTTP 200 with a JSON error body (no `trophies`).
+        if (data.reason && typeof data.trophies !== 'number') {
+            apiStatusBadge.style.color = 'var(--color-loss)';
+            apiStatusBadge.textContent = `⚠️ ${keyIpWhitelistHint(data.message)}`;
+            console.warn('[Profile] Error-shaped JSON:', data.reason, data.message);
             return;
         }
 
@@ -869,15 +890,6 @@ function purgeNonRotationMatches(silent = false) {
 // ======================================
 let lastSyncTime = null;
 
-async function checkIP(errData) {
-    if (errData && errData.message && errData.message.includes('Invalid IP')) {
-        // Catch both IPv4 and modern IPv6 addresses
-        const ipMatch = errData.message.match(/Invalid IP:?\s*([0-9a-fA-F:\.]+)/);
-        return ipMatch ? `IP ${ipMatch[1]}` : "your current IP";
-    }
-    return "your current IP";
-}
-
 async function syncBattlelog() {
     if (isSyncing) return;
     if (!userProfile || !userProfile.tag) {
@@ -943,8 +955,7 @@ async function syncBattlelog() {
                     try {
                         const errData = await res.json();
                         if (res.status === 403) {
-                            let requiredIp = await checkIP(errData);
-                            errorMsg = `⚠️ API key expired — regenerate for ${requiredIp}`;
+                            errorMsg = `⚠️ ${keyIpWhitelistHint(errData.message)}`;
                             console.error('[Sync] 403 Forbidden:', errData.hint || errData.message || 'IP mismatch');
                         } else if (errData.message) {
                             errorMsg = `Error: ${errData.message}`;
@@ -964,6 +975,18 @@ async function syncBattlelog() {
             if (syncStatus) syncStatus.style.color = 'var(--text-muted)';
             
             const data = await res.json();
+            if (data.reason && !Array.isArray(data.items)) {
+                const ip = extractIpFromApiMessage(String(data.message || ''));
+                const errorMsg = ip
+                    ? `⚠️ ${keyIpWhitelistHint(data.message)}`
+                    : [data.reason, data.message].filter(Boolean).join(' — ');
+                if (syncStatus) {
+                    syncStatus.textContent = errorMsg;
+                    syncStatus.style.color = 'var(--color-loss)';
+                }
+                console.warn('[Sync] Error JSON from battlelog:', data);
+                return;
+            }
             if (data.items) items = data.items;
             console.log(`[Sync] Fetched ${items.length} battlelog entries`);
         }
@@ -989,9 +1012,7 @@ async function syncBattlelog() {
             let myBrawlerName = "";
             let foundPlayer = false;
             
-            // Handle team-based modes
-            let myRank = item.battle.rank;
-            
+            // Handle team-based modes (never use team array index as "rank" — it is not win/loss.)
             if (item.battle.teams) {
                 for (let i = 0; i < item.battle.teams.length; i++) {
                     let team = item.battle.teams[i];
@@ -999,7 +1020,6 @@ async function syncBattlelog() {
                         if (p.tag === userProfile.tag) {
                             myBrawlerName = p.brawler.name.toUpperCase();
                             foundPlayer = true;
-                            if (myRank === undefined) myRank = i + 1; // Fallback to team array position for rank
                             break;
                         }
                     }
@@ -1014,7 +1034,6 @@ async function syncBattlelog() {
                     if (p.tag === userProfile.tag) {
                         myBrawlerName = p.brawler.name.toUpperCase();
                         foundPlayer = true;
-                        if (myRank === undefined) myRank = i + 1;
                         break;
                     }
                 }
@@ -1033,33 +1052,37 @@ async function syncBattlelog() {
             // Try to find map in ranked pool for icon, but DON'T skip if not found
             const mappedMap = rankedMaps.find(m => m.name === (item.event.map || ''));
             
-            // Determine result (Handle standard modes vs Ranked/Showdown)
+            // Determine result: prefer official `battle.result` (3v3 / most modes). Rank rules only when that is absent (Showdown-style).
             let result = 'loss';
-            if (myRank !== undefined) {
-                // Showdown modes relay on calculated rank
-                const r = myRank;
-                const modeStr = (item.battle.mode || item.event.mode || '').toLowerCase();
-                
-                if (r === 1) {
-                    result = 'win';
-                } else if (modeStr.includes('solo') && r <= 4) {
-                    result = 'win';
-                } else if (modeStr.includes('duo') && r <= 2) {
-                    result = 'win';
-                } else if (modeStr.includes('trio') && r <= 2) {
-                    result = 'win';
-                } else if (!modeStr.includes('solo') && !modeStr.includes('duo') && !modeStr.includes('trio') && r <= 2) {
-                    result = 'win'; // General fallback for new modes returning rank
-                } else if (r === 5 && modeStr.includes('solo')) {
-                    result = 'draw';
-                } else if (r === 3 && modeStr.includes('duo')) {
-                    result = 'draw';
-                }
+            const rawResult = (item.battle.result || '').toLowerCase();
+            const modeStr = (item.battle.mode || item.event.mode || '').toLowerCase();
+
+            if (rawResult === 'victory' || rawResult === 'win') {
+                result = 'win';
+            } else if (rawResult === 'defeat' || rawResult === 'loss') {
+                result = 'loss';
+            } else if (rawResult === 'draw') {
+                result = 'draw';
             } else {
-                // 3v3 and Standard modes
-                const rawResult = (item.battle.result || '').toLowerCase();
-                if (rawResult === 'victory' || rawResult === 'win') result = 'win';
-                else if (rawResult === 'draw') result = 'draw';
+                const placement = item.battle.rank;
+                if (placement !== undefined && placement !== null) {
+                    const r = Number(placement);
+                    if (!Number.isNaN(r)) {
+                        if (r === 1) {
+                            result = 'win';
+                        } else if (modeStr.includes('solo') && r <= 4) {
+                            result = 'win';
+                        } else if (modeStr.includes('duo') && r <= 2) {
+                            result = 'win';
+                        } else if (modeStr.includes('trio') && r <= 2) {
+                            result = 'win';
+                        } else if (r === 5 && modeStr.includes('solo')) {
+                            result = 'draw';
+                        } else if (r === 3 && modeStr.includes('duo')) {
+                            result = 'draw';
+                        }
+                    }
+                }
             }
             
             // Parse the actual battle time for accurate history
