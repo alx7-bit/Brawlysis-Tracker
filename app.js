@@ -4,6 +4,8 @@ let rankedMaps = [];
 let matches = JSON.parse(localStorage.getItem('brawl_matches')) || [];
 let userProfile = JSON.parse(localStorage.getItem('brawl_profile')) || null;
 let officialApiKey = localStorage.getItem('brawl_api_key') || '';
+/** When set, official + community API requests go to this origin (trailing slash ok). Empty = this site’s origin (Vercel/Netlify). */
+let apiProxyOrigin = (localStorage.getItem('brawl_proxy_origin') || '').trim().replace(/\/$/, '');
 let isSyncing = false; // Sync lock to prevent race conditions
 
 // Name normalization for cross-API matching
@@ -26,30 +28,59 @@ async function getBrowserIP() {
     }
 }
 
-// Universal API Fetcher
-// Auto-detects standalone browser mode and falls back to a direct CORS fetch
-// Includes auto-cache-busting to prevent Chrome from holding onto old stats
+/** Base URL for /api/official and /api/* proxies (never call Supercell from the browser — they do not allow CORS). */
+function getProxyBaseUrl() {
+    if (window.location.protocol === 'file:') {
+        return 'http://127.0.0.1:8000';
+    }
+    if (apiProxyOrigin) return apiProxyOrigin;
+    return window.location.origin;
+}
+
+function isNetworkOrCorsFailure(err) {
+    return err && (err.name === 'TypeError' || /Failed to fetch|NetworkError|Load failed/i.test(String(err.message || '')));
+}
+
+// Official Supercell API — always via same-origin or configured proxy (server forwards Authorization).
 async function smartBrawlFetch(endpoint) {
     const headers = { 'Authorization': `Bearer ${officialApiKey}` };
-    const isLocalFile = window.location.protocol === 'file:';
-    const isGithubHost = window.location.hostname.includes('github.io');
-    
-    // HTTP requests are hard-blocked by HTTPS websites (Mixed Content), so we skip the proxy check on GitHub
-    if (isLocalFile) {
+    const base = getProxyBaseUrl();
+    const url = `${base}/api/official${endpoint}`;
+    if (window.location.protocol === 'file:') {
         try {
-            // Try standard route through local python server
-            return await fetch(`http://127.0.0.1:8000/api/official${endpoint}`, { headers, cache: 'no-store' });
+            return await fetch(url, { headers, cache: 'no-store' });
         } catch (err) {
-            console.warn("[Network] Local proxy unreachable. Attempting direct API fetch via browser extension...");
-            return await fetch(`https://api.brawlstars.com/v1${endpoint}`, { headers, cache: 'no-store' });
+            console.warn('[Network] Local proxy unreachable:', err);
+            throw err;
         }
-    } else if (isGithubHost) {
-        // Fallback: Direct connection (Requires CORS Unblocker Extension installed in Chrome)
-        return await fetch(`https://api.brawlstars.com/v1${endpoint}`, { headers, cache: 'no-store' });
-    } else {
-        // Hosted on Vercel/Netlify with built-in proxied routes
-        return await fetch(`/api/official${endpoint}`, { headers, cache: 'no-store' });
     }
+    return fetch(url, { headers, cache: 'no-store' });
+}
+
+/** BrawlAPI (brawlers/maps) — try proxy first, then public API if the host has no rewrite. */
+async function fetchBrawlApiJson(path) {
+    const candidates = [];
+    if (window.location.protocol === 'file:') {
+        candidates.push('http://127.0.0.1:8000');
+    }
+    const proxyBase = getProxyBaseUrl();
+    if (!candidates.includes(proxyBase)) candidates.push(proxyBase);
+
+    const tried = new Set();
+    for (const base of candidates) {
+        if (tried.has(base)) continue;
+        tried.add(base);
+        try {
+            const res = await fetch(`${base}/api${path}`, { cache: 'no-store' });
+            const ct = res.headers.get('content-type') || '';
+            if (res.ok && ct.includes('application/json')) {
+                return await res.json();
+            }
+        } catch (_) { /* try next */ }
+    }
+    const res = await fetch(`https://api.brawlapi.com/v1${path}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error(`BrawlAPI ${path} HTTP ${res.status}`);
+    return await res.json();
 }
 
 // Global Game Mode Icon Safety Map (using official Brawlify IDs)
@@ -144,6 +175,7 @@ const collectionCount = document.getElementById('collection-count');
 
 // Settings Elements - Expanded
 const apiTokenInput = document.getElementById('api-token-input');
+const apiProxyInput = document.getElementById('api-proxy-input');
 const saveApiBtn = document.getElementById('save-api-btn');
 const saveApiMsg = document.getElementById('save-api-msg');
 
@@ -163,6 +195,7 @@ async function init() {
     // Populate Settings Textarea
     mapPoolInput.value = RANKED_POOL.join('\n');
     apiTokenInput.value = officialApiKey;
+    if (apiProxyInput) apiProxyInput.value = localStorage.getItem('brawl_proxy_origin') || '';
     
     setupDropdowns();
     await fetchGameData();
@@ -236,10 +269,16 @@ savePoolBtn.addEventListener('click', async () => {
 saveApiBtn.addEventListener('click', async () => {
     officialApiKey = apiTokenInput.value.trim();
     localStorage.setItem('brawl_api_key', officialApiKey);
+
+    const rawProxy = apiProxyInput ? apiProxyInput.value.trim().replace(/\/$/, '') : '';
+    apiProxyOrigin = rawProxy;
+    if (rawProxy) localStorage.setItem('brawl_proxy_origin', rawProxy);
+    else localStorage.removeItem('brawl_proxy_origin');
     
     saveApiMsg.style.display = 'block';
     setTimeout(() => { saveApiMsg.style.display = 'none'; }, 3000);
     
+    await fetchGameData();
     await fetchLiveProfile();
 });
 
@@ -453,18 +492,14 @@ function renderAnalyticsMapOptions(list) {
 // Fetch Data from BrawlAPI
 async function fetchGameData() {
     try {
-        // Fetch Brawlers using our local proxy
-        const brawlersRes = await fetch('/api/brawlers');
-        const brawlersData = await brawlersRes.json();
+        const brawlersData = await fetchBrawlApiJson('/brawlers');
         brawlers = brawlersData.list.sort((a, b) => a.name.localeCompare(b.name));
         
         brawlerSearch.placeholder = "Select a Brawler...";
         brawlerSearch.disabled = false;
         renderBrawlerOptions(brawlers);
 
-        // Fetch Maps using our local proxy instead of standard trophy events
-        const mapsRes = await fetch('/api/maps');
-        const mapsData = await mapsRes.json();
+        const mapsData = await fetchBrawlApiJson('/maps');
         
         // Deduplicate maps by their sanitized name
         const uniqueMaps = [];
@@ -581,24 +616,35 @@ async function fetchLiveProfile() {
     try {
         const tagFormatted = userProfile.tag.replace('#', '');
         const res = await smartBrawlFetch(`/players/%23${tagFormatted}`);
-        
-        const data = await res.json();
-        
-        if (res.status === 403 || data.reason === "accessDenied") {
-            apiStatusBadge.style.color = 'var(--color-loss)';
-            
-            // Extract the IP from Supercell's error message (e.g., "Invalid IP: 1.2.3.4" or IPv6)
-            let requiredIp = "your current IP";
-            if (data.message && data.message.includes('Invalid IP')) {
-                const ipMatch = data.message.match(/Invalid IP:?\s*([0-9a-fA-F:\.]+)/);
-                if (ipMatch) requiredIp = `IP ${ipMatch[1]}`;
+        const ct = res.headers.get('content-type') || '';
+
+        if (!res.ok) {
+            let hint = `API error (${res.status})`;
+            if (res.status === 404 || !ct.includes('application/json')) {
+                hint = 'No proxy here (e.g. GitHub Pages). Deploy this repo on Vercel/Netlify, or set “Proxy site URL” in Settings to that deployment.';
+            } else {
+                try {
+                    const errData = await res.json();
+                    if (res.status === 403) {
+                        let requiredIp = 'your current IP';
+                        if (errData.message && errData.message.includes('Invalid IP')) {
+                            const ipMatch = errData.message.match(/Invalid IP:?\s*([0-9a-fA-F:\.]+)/);
+                            if (ipMatch) requiredIp = `IP ${ipMatch[1]}`;
+                        }
+                        apiStatusBadge.style.color = 'var(--color-loss)';
+                        apiStatusBadge.textContent = `⚠️ API key — regenerate for ${requiredIp} at developer.brawlstars.com`;
+                        console.error('[Profile] 403:', errData.message || errData);
+                        return;
+                    }
+                    if (errData.message) hint = errData.message;
+                } catch { /* keep hint */ }
             }
-            
-            apiStatusBadge.textContent = `⚠️ API key expired — regenerate for ${requiredIp} at developer.brawlstars.com`;
-            console.error('[Profile] 403: API key is IP-locked and your IP has changed. Generate a new key.');
-            // Don't auto-hide this error — keep it visible
+            apiStatusBadge.style.color = 'var(--color-loss)';
+            apiStatusBadge.textContent = hint;
             return;
         }
+
+        const data = await res.json();
         
         if (data.trophies) {
             // Update successful
@@ -636,12 +682,13 @@ async function fetchLiveProfile() {
         }
         
     } catch (err) {
-        if (window.location.protocol === 'file:' || err.name === 'TypeError') {
-            apiStatusBadge.style.color = 'var(--text-muted)';
-            apiStatusBadge.textContent = 'Standalone Mode (Offline)';
+        apiStatusBadge.style.color = 'var(--color-loss)';
+        if (window.location.protocol === 'file:') {
+            apiStatusBadge.textContent = 'Run Launch.bat (local proxy) or open the deployed site on Vercel/Netlify.';
+        } else if (isNetworkOrCorsFailure(err)) {
+            apiStatusBadge.textContent = 'Cannot reach API proxy. If you use GitHub Pages, set “Proxy site URL” to your Vercel deployment of this repo.';
         } else {
-            apiStatusBadge.style.color = 'var(--color-loss)';
-            apiStatusBadge.textContent = 'Failed to fetch';
+            apiStatusBadge.textContent = 'Failed to fetch profile';
         }
         console.error(err);
     }
@@ -860,17 +907,22 @@ async function syncBattlelog() {
             const res = await smartBrawlFetch(`/players/%23${tagFormatted}/battlelog`);
             
             if (!res.ok) {
+                const ct = res.headers.get('content-type') || '';
                 let errorMsg = `Sync error (${res.status})`;
-                try {
-                    const errData = await res.json();
-                    if (res.status === 403) {
-                        let requiredIp = await checkIP(errData);
-                        errorMsg = `⚠️ API key expired — regenerate for ${requiredIp}`;
-                        console.error('[Sync] 403 Forbidden:', errData.hint || errData.message || 'IP mismatch');
-                    } else if (errData.message) {
-                        errorMsg = `Error: ${errData.message}`;
-                    }
-                } catch { /* couldn't parse error body */ }
+                if (res.status === 404 || !ct.includes('application/json')) {
+                    errorMsg = 'No API proxy on this host. Use Vercel/Netlify for this repo, or set “Proxy site URL” in Settings.';
+                } else {
+                    try {
+                        const errData = await res.json();
+                        if (res.status === 403) {
+                            let requiredIp = await checkIP(errData);
+                            errorMsg = `⚠️ API key expired — regenerate for ${requiredIp}`;
+                            console.error('[Sync] 403 Forbidden:', errData.hint || errData.message || 'IP mismatch');
+                        } else if (errData.message) {
+                            errorMsg = `Error: ${errData.message}`;
+                        }
+                    } catch { /* couldn't parse error body */ }
+                }
                 
                 if (syncStatus) {
                     syncStatus.textContent = errorMsg;
@@ -1049,10 +1101,12 @@ async function syncBattlelog() {
         console.error("Auto Sync Failed:", err);
         const syncStatus = document.getElementById('sync-status-text');
         if (syncStatus) {
-            if (window.location.protocol === 'file:' || err.name === 'TypeError') {
-                syncStatus.textContent = 'Offline — Launch.bat or CORS-extension required';
+            if (window.location.protocol === 'file:') {
+                syncStatus.textContent = 'Offline — start the local server (Launch.bat) for API sync.';
+            } else if (isNetworkOrCorsFailure(err)) {
+                syncStatus.textContent = 'Cannot reach API proxy. Deploy on Vercel/Netlify or set “Proxy site URL” in Settings.';
             } else {
-                syncStatus.textContent = 'Sync failed — check your API key';
+                syncStatus.textContent = 'Sync failed — check API key and developer portal IP whitelist.';
             }
         }
     } finally {
