@@ -798,9 +798,34 @@ clearAllBtn.addEventListener('click', () => {
     }
 });
 
+/** Milliseconds for sorting; uses `date`, else parses Supercell `battleTime` id, else numeric id. */
+function matchChronoKey(m) {
+    if (!m) return 0;
+    const t = Date.parse(m.date);
+    if (Number.isFinite(t)) return t;
+    const sid = String(m.id || '');
+    const bt = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/.exec(sid);
+    if (bt) {
+        const parsed = Date.parse(`${bt[1]}-${bt[2]}-${bt[3]}T${bt[4]}:${bt[5]}:${bt[6]}Z`);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    const n = Number(m.id);
+    return Number.isFinite(n) ? n : 0;
+}
+
+function compareMatchesNewestFirst(a, b) {
+    const kb = matchChronoKey(b);
+    const ka = matchChronoKey(a);
+    if (kb !== ka) return kb - ka;
+    return String(b.id).localeCompare(String(a.id));
+}
+
 // Render Match History List
 function renderMatches() {
     const listContainer = document.getElementById('matches-list-container');
+
+    // API sync uses unshift in battlelog order (newest-first from API becomes reversed in the array).
+    matches.sort(compareMatchesNewestFirst);
     
     // Filter matches based on the active tab
     const filteredMatches = matches.filter(m => {
@@ -813,6 +838,7 @@ function renderMatches() {
 
     if (filteredMatches.length === 0) {
         listContainer.innerHTML = `<div class="empty-state">No ${activeMatchTab} matches recorded yet.</div>`;
+        localStorage.setItem('brawl_matches', JSON.stringify(matches));
         return;
     }
 
@@ -847,6 +873,8 @@ function renderMatches() {
 
         listContainer.appendChild(item);
     });
+
+    localStorage.setItem('brawl_matches', JSON.stringify(matches));
 }
 
 function deleteMatch(id) {
@@ -1446,6 +1474,35 @@ function renderCollection(brawlersData) {
         const slug = toBrawltimeSlug(name);
         return `https://media.brawltime.ninja/brawlers/${slug}/avatar.png`;
     }
+
+    const normalizeStr = str => String(str || '').toUpperCase().replace(/[\s\-\.]+/g, '').replace(/[^A-Z0-9]/g, '');
+
+    /** Official player `gears` include `id`; Brawlify CDN mirrors game assets (see github.com/Brawlify/CDN). */
+    function resolveGearIconUrl(gear, globalBrawler) {
+        if (!gear) return null;
+        const gid = gear.id != null ? Number(gear.id) : NaN;
+        if (Number.isFinite(gid) && gid > 0) {
+            return `https://cdn.brawlify.com/gears/regular/${gid}.png`;
+        }
+        if (gear.name && globalBrawler && Array.isArray(globalBrawler.gears)) {
+            const m = globalBrawler.gears.find(g => normalizeStr(g.name) === normalizeStr(gear.name));
+            if (m) {
+                if (m.imageUrl) return m.imageUrl;
+                const mid = m.id != null ? Number(m.id) : NaN;
+                if (Number.isFinite(mid) && mid > 0) return `https://cdn.brawlify.com/gears/regular/${mid}.png`;
+            }
+        }
+        return null;
+    }
+
+    function gearSlotHtml(active, imageUrl) {
+        const ringClass = active ? 'gear-active' : 'gear-locked';
+        if (imageUrl) {
+            const safe = String(imageUrl).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+            return `<div class="gear-ring ${ringClass}"><img src="${safe}" class="gear-icon-img" alt="" loading="lazy" decoding="async" onerror="this.style.display='none';var n=this.nextElementSibling;if(n)n.style.display='block';"><div class="gear-inner" style="display:none"></div></div>`;
+        }
+        return `<div class="gear-ring ${ringClass}"><div class="gear-inner"></div></div>`;
+    }
     
     sorted.forEach(b => {
         const normalizedPlayerName = normalizeBrawlerName(b.name);
@@ -1460,8 +1517,6 @@ function renderCollection(brawlersData) {
         const gCount = b.gadgets ? b.gadgets.length : 0;
         const spCount = b.starPowers ? b.starPowers.length : 0;
         const gearCount = b.gears ? b.gears.length : 0;
-        
-        const normalizeStr = str => str.toUpperCase().replace(/[\s\-\.]+/g, '').replace(/[^A-Z0-9]/g, '');
 
         // Try to map exact item graphics via normalized matching
         let gImage = null;
@@ -1502,6 +1557,8 @@ function renderCollection(brawlersData) {
 
         const g1Active = gearCount >= 1;
         const g2Active = gearCount >= 2;
+        const gear1Url = gearCount >= 1 && b.gears[0] ? resolveGearIconUrl(b.gears[0], globalBrawler) : null;
+        const gear2Url = gearCount >= 2 && b.gears[1] ? resolveGearIconUrl(b.gears[1], globalBrawler) : null;
 
         // Build the portrait with an onload check for empty 0-byte responses
         const escapedFallback = fallbackUrl.replace(/'/g, "\\'");
@@ -1532,8 +1589,8 @@ function renderCollection(brawlersData) {
                 <div class="brawler-stat-icons">
                     ${gadgetNode}
                     ${spNode}
-                    <div class="gear-ring ${g1Active ? 'gear-active' : 'gear-locked'}"><div class="gear-inner"></div></div>
-                    <div class="gear-ring ${g2Active ? 'gear-active' : 'gear-locked'}"><div class="gear-inner"></div></div>
+                    ${gearSlotHtml(g1Active, gear1Url)}
+                    ${gearSlotHtml(g2Active, gear2Url)}
                 </div>
             </div>
         `;
