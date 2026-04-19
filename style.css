@@ -400,6 +400,31 @@ button {
     display: block !important;
 }
 
+.matchup-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+    font-size: 0.95rem;
+}
+.matchup-table th,
+.matchup-table td {
+    padding: 0.65rem 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+.matchup-table th {
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.matchup-cell-brawler {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
 /* Modal */
 .modal-overlay {
     position: fixed;

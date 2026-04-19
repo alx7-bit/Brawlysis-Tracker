@@ -17,6 +17,157 @@ function normalizeBrawlerName(name) {
         .replace(/[^A-Z0-9]/g, ''); // strip ALL non-alphanumeric
 }
 
+/** Enemy brawler names from battlelog (all opposing teams / other showdown players). */
+function extractOpponentBrawlersFromBattle(item, userTag) {
+    const names = [];
+    const add = (n) => {
+        if (n && typeof n === 'string') names.push(n.toUpperCase().trim());
+    };
+    const b = item.battle;
+    if (!b) return [];
+    if (Array.isArray(b.teams)) {
+        let myTeamIdx = -1;
+        for (let i = 0; i < b.teams.length; i++) {
+            const team = b.teams[i];
+            if (!Array.isArray(team)) continue;
+            if (team.some(p => p && p.tag === userTag)) {
+                myTeamIdx = i;
+                break;
+            }
+        }
+        for (let i = 0; i < b.teams.length; i++) {
+            if (i === myTeamIdx) continue;
+            const team = b.teams[i];
+            if (!Array.isArray(team)) continue;
+            for (const p of team) {
+                if (p && p.brawler && p.brawler.name) add(p.brawler.name);
+            }
+        }
+    } else if (Array.isArray(b.players)) {
+        for (const p of b.players) {
+            if (p && p.tag !== userTag && p.brawler && p.brawler.name) add(p.brawler.name);
+        }
+    }
+    return [...new Set(names)];
+}
+
+function opponentKeyFromRawName(rawUpper) {
+    const gb = brawlers.find(x => normalizeBrawlerName(x.name) === normalizeBrawlerName(rawUpper));
+    if (gb) return `id:${gb.id}`;
+    return `n:${normalizeBrawlerName(rawUpper)}`;
+}
+
+function opponentDisplayFromKey(key) {
+    if (key.startsWith('id:')) {
+        const id = Number(key.slice(3));
+        const gb = brawlers.find(x => Number(x.id) === id);
+        return { name: gb ? gb.name : `Brawler ${id}`, icon: gb ? (gb.imageUrl || gb.imageUrl2 || '') : '' };
+    }
+    const norm = key.slice(2);
+    const gb = brawlers.find(x => normalizeBrawlerName(x.name) === norm);
+    return { name: gb ? gb.name : norm, icon: gb ? (gb.imageUrl || gb.imageUrl2 || '') : '' };
+}
+
+const MIN_MATCHUP_GAMES = 2;
+
+function populateMatchupSelfSelect(rankedMatches) {
+    const sel = document.getElementById('matchup-self-select');
+    if (!sel) return;
+    const keys = new Map();
+    rankedMatches.forEach(m => {
+        if (!m.opponentBrawlers || !m.opponentBrawlers.length) return;
+        const k = m.brawlerId && Number(m.brawlerId) > 0 ? `id:${m.brawlerId}` : `n:${normalizeBrawlerName(m.brawlerName)}`;
+        if (!keys.has(k)) keys.set(k, m.brawlerName || 'Unknown');
+    });
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '— Select your brawler —';
+    sel.appendChild(placeholder);
+    [...keys.entries()]
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .forEach(([k, label]) => {
+            const opt = document.createElement('option');
+            opt.value = k;
+            opt.textContent = label;
+            sel.appendChild(opt);
+        });
+    if (prev && keys.has(prev)) {
+        sel.value = prev;
+        return;
+    }
+    let bestKey = null;
+    let bestN = 0;
+    keys.forEach((label, k) => {
+        const n = rankedMatches.filter(m => {
+            if (!m.opponentBrawlers || !m.opponentBrawlers.length) return false;
+            if (k.startsWith('id:')) return Number(m.brawlerId) === Number(k.slice(3));
+            const mk = m.brawlerId && Number(m.brawlerId) > 0 ? `id:${m.brawlerId}` : `n:${normalizeBrawlerName(m.brawlerName)}`;
+            return mk === k;
+        }).length;
+        if (n > bestN) {
+            bestN = n;
+            bestKey = k;
+        }
+    });
+    if (bestKey) sel.value = bestKey;
+}
+
+function renderMatchupTable(rankedMatches) {
+    const wrap = document.getElementById('matchup-table-container');
+    const sel = document.getElementById('matchup-self-select');
+    if (!wrap || !sel) return;
+    const key = sel.value;
+    if (!key) {
+        wrap.innerHTML = '<p class="empty-state" style="margin:0;">Select a brawler to see who you perform well or poorly against.</p>';
+        return;
+    }
+    const myMatches = rankedMatches.filter(m => {
+        if (!m.opponentBrawlers || !m.opponentBrawlers.length) return false;
+        const mk = m.brawlerId && Number(m.brawlerId) > 0 ? `id:${m.brawlerId}` : `n:${normalizeBrawlerName(m.brawlerName)}`;
+        if (key.startsWith('id:')) return Number(m.brawlerId) === Number(key.slice(3));
+        return mk === key;
+    });
+    const agg = {};
+    myMatches.forEach(m => {
+        if (m.result !== 'win' && m.result !== 'loss') return;
+        m.opponentBrawlers.forEach(raw => {
+            const ok = opponentKeyFromRawName(raw);
+            if (!agg[ok]) agg[ok] = { wins: 0, losses: 0 };
+            if (m.result === 'win') agg[ok].wins++;
+            else agg[ok].losses++;
+        });
+    });
+    const rows = Object.entries(agg)
+        .map(([ok, s]) => {
+            const total = s.wins + s.losses;
+            const disp = opponentDisplayFromKey(ok);
+            return { ok, ...s, total, wr: total ? Math.round((s.wins / total) * 100) : 0, ...disp };
+        })
+        .filter(r => r.total >= MIN_MATCHUP_GAMES)
+        .sort((a, b) => b.wr - a.wr || b.total - a.total);
+
+    if (rows.length === 0) {
+        wrap.innerHTML = `<p class="empty-state" style="margin:0;">Need at least ${MIN_MATCHUP_GAMES} ranked games vs the same enemy brawler on the other team. Sync more battles, or pick another brawler.</p>`;
+        return;
+    }
+
+    let html = '<table class="matchup-table"><thead><tr><th>Enemy brawler</th><th>Record</th><th>Win rate</th></tr></thead><tbody>';
+    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    rows.forEach(r => {
+        const badgeColor = r.wr >= 50 ? 'var(--color-win)' : 'var(--color-loss)';
+        const bg = r.wr >= 50 ? 'rgba(76, 219, 143, 0.1)' : 'rgba(235, 87, 87, 0.1)';
+        html += `<tr>
+            <td><div class="matchup-cell-brawler"><img src="${r.icon || 'https://via.placeholder.com/36'}" alt="" class="brawler-avatar" style="width:36px;height:36px;" onerror="this.src='https://via.placeholder.com/36'"><span>${esc(r.name)}</span></div></td>
+            <td>${r.wins}W — ${r.losses}L <span style="color:var(--text-muted);font-size:0.8rem;">(${r.total})</span></td>
+            <td><span class="win-rate-badge" style="background-color:${bg};color:${badgeColor}">${r.wr}%</span></td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+}
+
 // Browser IP Detection Helper
 async function getBrowserIP() {
     try {
@@ -260,6 +411,15 @@ async function init() {
         syncNowBtn.addEventListener('click', () => {
             syncBattlelog();
             fetchLiveProfile();
+        });
+    }
+
+    const matchupSelfSelect = document.getElementById('matchup-self-select');
+    if (matchupSelfSelect) {
+        matchupSelfSelect.addEventListener('change', () => {
+            if (activeAnalyticsTab === 'matchups') {
+                renderMatchupTable(matches.filter(m => m.isRanked !== false));
+            }
         });
     }
 }
@@ -1144,6 +1304,8 @@ async function syncBattlelog() {
                 battleDate = new Date().toISOString();
             }
             
+            const oppBrawlers = extractOpponentBrawlersFromBattle(item, userProfile.tag);
+
             const newMatch = {
                 id: item.battleTime,
                 source: 'api',  // Tag as API-synced so it never gets purged
@@ -1155,19 +1317,25 @@ async function syncBattlelog() {
                 modeIcon: mappedMap?.gameMode?.imageUrl || '',
                 result,
                 isRanked: isRanked,
-                date: battleDate
+                date: battleDate,
+                opponentBrawlers: oppBrawlers
             };
             
             // Duplicate & Retroactive Update Check
             const existingIdx = matches.findIndex(m => m.id === item.battleTime);
             if (existingIdx !== -1) {
-                // Background repair: update previously broken entries
                 const oldMatch = matches[existingIdx];
+                let repaired = false;
+                if (oppBrawlers.length && JSON.stringify(oldMatch.opponentBrawlers || []) !== JSON.stringify(oppBrawlers)) {
+                    oldMatch.opponentBrawlers = oppBrawlers;
+                    repaired = true;
+                }
                 if (oldMatch.isRanked !== isRanked || oldMatch.result !== result) {
                     oldMatch.isRanked = isRanked;
                     oldMatch.result = result;
-                    updatedCount++;
+                    repaired = true;
                 }
+                if (repaired) updatedCount++;
             } else {
                 matches.unshift(newMatch);
                 newCount++;
@@ -1241,7 +1409,7 @@ function updateDashboard() {
         document.getElementById('top-brawlers-list').innerHTML = '<li class="empty-state">No ranked matches recorded yet.</li>';
         document.getElementById('best-modes-list').innerHTML = '<li class="empty-state">No ranked matches recorded yet.</li>';
         playedMaps = [];
-        if (selectedAnalyticsMap || activeAnalyticsTab === 'overall') updateAnalyticsData();
+        if (selectedAnalyticsMap || activeAnalyticsTab === 'overall' || activeAnalyticsTab === 'matchups') updateAnalyticsData();
         return;
     }
 
@@ -1266,7 +1434,7 @@ function updateDashboard() {
         }
     });
     playedMaps = Array.from(uniqueMapsMap.values());
-    if (selectedAnalyticsMap || activeAnalyticsTab === 'overall') updateAnalyticsData();
+    if (selectedAnalyticsMap || activeAnalyticsTab === 'overall' || activeAnalyticsTab === 'matchups') updateAnalyticsData();
 
     // 1. Overall Win Rate
     const wins = rankedMatches.filter(m => m.result === 'win').length;
@@ -1409,11 +1577,33 @@ function renderAnalyticsBrawlerRows(sortedBrawlers) {
     });
 }
 
-// Render Analytics Tab (by map or overall ranked stats)
+// Render Analytics Tab (by map, overall, or matchup chart)
 function updateAnalyticsData() {
     const mapSection = document.getElementById('analytics-map-section');
     const heading = document.getElementById('analytics-brawlers-heading');
+    const matchupPanel = document.getElementById('analytics-matchup-panel');
     const rankedMatches = matches.filter(m => m.isRanked !== false);
+
+    if (activeAnalyticsTab === 'matchups') {
+        if (mapSection) mapSection.style.display = 'none';
+        if (matchupPanel) matchupPanel.style.display = 'block';
+        analyticsBrawlersList.style.display = 'none';
+        if (heading) heading.textContent = 'Matchups (your brawler vs enemy team)';
+        populateMatchupSelfSelect(rankedMatches);
+        const sel = document.getElementById('matchup-self-select');
+        const wrap = document.getElementById('matchup-table-container');
+        if (rankedMatches.length === 0 && wrap) {
+            wrap.innerHTML = '<p class="empty-state" style="margin:0;">No ranked matches recorded yet.</p>';
+        } else if (sel && sel.options.length <= 1 && wrap) {
+            wrap.innerHTML = '<p class="empty-state" style="margin:0;">No synced ranked games include enemy brawler data yet. Run <strong>Sync Now</strong> after playing — matchups are filled from the API battle log.</p>';
+        } else {
+            renderMatchupTable(rankedMatches);
+        }
+        return;
+    }
+
+    if (matchupPanel) matchupPanel.style.display = 'none';
+    analyticsBrawlersList.style.display = '';
 
     if (activeAnalyticsTab === 'overall') {
         if (mapSection) mapSection.style.display = 'none';
