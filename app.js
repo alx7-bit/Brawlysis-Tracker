@@ -153,6 +153,7 @@ let selectedMode = null;
 // Analytics State
 let playedMaps = [];
 let selectedAnalyticsMap = null;
+let activeAnalyticsTab = 'map'; // 'map' | 'overall'
 let activeMatchTab = 'ranked'; // 'ranked' or 'trophy'
 
 // DOM Elements
@@ -276,6 +277,7 @@ navLinks.forEach(link => {
                 view.classList.remove('active');
             }
         });
+        if (targetView === 'analytics') updateAnalyticsData();
     });
 });
 
@@ -781,11 +783,27 @@ matchForm.addEventListener('submit', (e) => {
 
 // Match History Tab Switching
 window.switchMatchTab = function(tabName) {
-    document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
-    const targetTab = document.querySelector(`.sub-tab[data-tab="${tabName}"]`);
+    document.querySelectorAll('#matches .sub-tab').forEach(t => t.classList.remove('active'));
+    const targetTab = document.querySelector(`#matches .sub-tab[data-tab="${tabName}"]`);
     if (targetTab) targetTab.classList.add('active');
     activeMatchTab = tabName;
     renderMatches();
+};
+
+window.switchAnalyticsTab = function(tabName) {
+    activeAnalyticsTab = tabName;
+    document.querySelectorAll('#analytics .analytics-sub-tab').forEach(t => {
+        t.classList.remove('active');
+        const ind = t.querySelector('.analytics-tab-indicator');
+        if (ind) ind.style.display = 'none';
+    });
+    const targetTab = document.querySelector(`#analytics .analytics-sub-tab[data-analytics-tab="${tabName}"]`);
+    if (targetTab) {
+        targetTab.classList.add('active');
+        const ind = targetTab.querySelector('.analytics-tab-indicator');
+        if (ind) ind.style.display = 'block';
+    }
+    updateAnalyticsData();
 };
 
 // Clear All Matches
@@ -1222,6 +1240,8 @@ function updateDashboard() {
         
         document.getElementById('top-brawlers-list').innerHTML = '<li class="empty-state">No ranked matches recorded yet.</li>';
         document.getElementById('best-modes-list').innerHTML = '<li class="empty-state">No ranked matches recorded yet.</li>';
+        playedMaps = [];
+        if (selectedAnalyticsMap || activeAnalyticsTab === 'overall') updateAnalyticsData();
         return;
     }
 
@@ -1246,7 +1266,7 @@ function updateDashboard() {
         }
     });
     playedMaps = Array.from(uniqueMapsMap.values());
-    if (selectedAnalyticsMap) updateAnalyticsData();
+    if (selectedAnalyticsMap || activeAnalyticsTab === 'overall') updateAnalyticsData();
 
     // 1. Overall Win Rate
     const wins = rankedMatches.filter(m => m.result === 'win').length;
@@ -1371,18 +1391,69 @@ function updateDashboard() {
     });
 }
 
-// Render Analytics Tab
+function renderAnalyticsBrawlerRows(sortedBrawlers) {
+    analyticsBrawlersList.innerHTML = '';
+    sortedBrawlers.forEach(b => {
+        analyticsBrawlersList.innerHTML += `
+            <li>
+                <div class="brawler-info">
+                    <img src="${b.icon || 'https://via.placeholder.com/40'}" class="brawler-avatar" onerror="this.src='https://via.placeholder.com/40'">
+                    <div>
+                        <strong>${b.name}</strong>
+                        <div style="font-size: 0.8rem; color: var(--text-muted)">${b.matches} matches (${b.wins}W - ${b.matches - b.wins}L)</div>
+                    </div>
+                </div>
+                <span class="win-rate-badge" style="background-color: ${b.winRate >= 50 ? 'rgba(76, 219, 143, 0.1)' : 'rgba(235, 87, 87, 0.1)'}; color: ${b.winRate >= 50 ? 'var(--color-win)' : 'var(--color-loss)'}">${b.winRate}% WR</span>
+            </li>
+        `;
+    });
+}
+
+// Render Analytics Tab (by map or overall ranked stats)
 function updateAnalyticsData() {
+    const mapSection = document.getElementById('analytics-map-section');
+    const heading = document.getElementById('analytics-brawlers-heading');
+    const rankedMatches = matches.filter(m => m.isRanked !== false);
+
+    if (activeAnalyticsTab === 'overall') {
+        if (mapSection) mapSection.style.display = 'none';
+        if (heading) heading.textContent = 'Overall win rate by brawler (all ranked maps)';
+
+        if (rankedMatches.length === 0) {
+            analyticsBrawlersList.innerHTML = '<li class="empty-state">No ranked matches recorded yet.</li>';
+            return;
+        }
+
+        const brawlerStats = {};
+        rankedMatches.forEach(m => {
+            if (!brawlerStats[m.brawlerId]) {
+                brawlerStats[m.brawlerId] = { name: m.brawlerName, icon: m.brawlerIcon, matches: 0, wins: 0 };
+            }
+            brawlerStats[m.brawlerId].matches++;
+            if (m.result === 'win') brawlerStats[m.brawlerId].wins++;
+        });
+
+        const sortedBrawlers = Object.values(brawlerStats)
+            .map(b => ({ ...b, winRate: Math.round((b.wins / b.matches) * 100) }))
+            .sort((a, b) => {
+                if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+                return b.matches - a.matches;
+            });
+
+        renderAnalyticsBrawlerRows(sortedBrawlers);
+        return;
+    }
+
+    if (mapSection) mapSection.style.display = '';
+    if (heading) heading.textContent = 'Brawler performance (this map)';
+
     if (!selectedAnalyticsMap) {
         analyticsBrawlersList.innerHTML = '<li class="empty-state">Select a map above to see brawler win rates.</li>';
         return;
     }
 
-    // Filter for only ranked matches for analytics
-    const rankedMatches = matches.filter(m => m.isRanked !== false);
-
     const mapMatches = rankedMatches.filter(m => m.modeName === selectedAnalyticsMap.modeName && m.mapName === selectedAnalyticsMap.mapName);
-    
+
     if (mapMatches.length === 0) {
         analyticsBrawlersList.innerHTML = '<li class="empty-state">No data available for this map.</li>';
         return;
@@ -1404,21 +1475,7 @@ function updateAnalyticsData() {
             return b.winRate - a.winRate;
         });
 
-    analyticsBrawlersList.innerHTML = '';
-    sortedBrawlers.forEach(b => {
-        analyticsBrawlersList.innerHTML += `
-            <li>
-                <div class="brawler-info">
-                    <img src="${b.icon || 'https://via.placeholder.com/40'}" class="brawler-avatar" onerror="this.src='https://via.placeholder.com/40'">
-                    <div>
-                        <strong>${b.name}</strong>
-                        <div style="font-size: 0.8rem; color: var(--text-muted)">${b.matches} matches (${b.wins}W - ${b.matches - b.wins}L)</div>
-                    </div>
-                </div>
-                <span class="win-rate-badge" style="background-color: ${b.winRate >= 50 ? 'rgba(76, 219, 143, 0.1)' : 'rgba(235, 87, 87, 0.1)'}; color: ${b.winRate >= 50 ? 'var(--color-win)' : 'var(--color-loss)'}">${b.winRate}% SR</span>
-            </li>
-        `;
-    });
+    renderAnalyticsBrawlerRows(sortedBrawlers);
 }
 
 // Render Collection Grid

@@ -17,7 +17,7 @@
             <ul class="nav-links">
                 <li data-view="dashboard" class="active">Dashboard</li>
                 <li data-view="matches">Match History</li>
-                <li data-view="analytics">Map Analytics</li>
+                <li data-view="analytics">Match Analytics</li>
                 <li data-view="collection">Collection</li>
                 <li data-view="resources">Resources</li>
                 <li data-view="settings">Settings (Map Pool)</li>
@@ -130,13 +130,24 @@
                 </div>
             </section>
 
-            <!-- Map Analytics View -->
+            <!-- Match Analytics View -->
             <section id="analytics" class="view">
                 <div class="header-with-actions">
-                    <h2>Map Analytics</h2>
+                    <h2>Match Analytics</h2>
+                </div>
+
+                <div class="sub-tabs-bar" style="display: flex; gap: 1rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; position: relative; z-index: 50;">
+                    <button type="button" class="analytics-sub-tab active" data-analytics-tab="map" onclick="switchAnalyticsTab('map')" style="background: none; border: none; padding: 0.5rem 1rem; cursor: pointer; position: relative; font-weight: 600; transition: color 0.3s; z-index: 51;">
+                        By map
+                        <div class="tab-indicator analytics-tab-indicator" style="position: absolute; bottom: -0.6rem; left: 0; width: 100%; height: 2px; background: var(--accent-blue); display: block;"></div>
+                    </button>
+                    <button type="button" class="analytics-sub-tab" data-analytics-tab="overall" onclick="switchAnalyticsTab('overall')" style="background: none; border: none; padding: 0.5rem 1rem; cursor: pointer; position: relative; font-weight: 600; transition: color 0.3s; z-index: 51;">
+                        Overall by brawler
+                        <div class="tab-indicator analytics-tab-indicator" style="position: absolute; bottom: -0.6rem; left: 0; width: 100%; height: 2px; background: var(--accent-blue); display: none;"></div>
+                    </button>
                 </div>
                 
-                <div style="margin-bottom: 2rem; position: relative; z-index: 50;">
+                <div id="analytics-map-section" style="margin-bottom: 2rem; position: relative; z-index: 50;">
                     <h3 style="margin-bottom: 1rem; color: var(--text-muted); font-size: 1.1rem; font-weight: 600;">Select a Map</h3>
                     <!-- Reused Custom Dropdown Structure -->
                     <div class="custom-dropdown" id="analytics-map-dropdown">
@@ -152,7 +163,7 @@
                 </div>
 
                 <div class="stat-card">
-                    <h3>Brawler Performance</h3>
+                    <h3 id="analytics-brawlers-heading">Brawler performance (this map)</h3>
                     <ul class="stats-list" id="analytics-brawlers-list" style="margin-top: 1rem;">
                         <li class="empty-state">Select a map above to see brawler win rates.</li>
                     </ul>

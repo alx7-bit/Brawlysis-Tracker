@@ -386,6 +386,20 @@ button {
     display: block !important;
 }
 
+.analytics-sub-tab {
+    opacity: 0.6;
+    color: var(--text-muted);
+}
+
+.analytics-sub-tab.active {
+    opacity: 1;
+    color: var(--accent-blue) !important;
+}
+
+.analytics-sub-tab.active .analytics-tab-indicator {
+    display: block !important;
+}
+
 /* Modal */
 .modal-overlay {
     position: fixed;
@@ -936,6 +950,18 @@ select option {
     position: relative;
     box-shadow: 0 2px 4px rgba(0,0,0,0.5);
     transition: all 0.3s ease;
+}
+.gear-ring .gear-icon-img {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1;
+    pointer-events: none;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
 }
 .gear-ring.gear-active {
     background: linear-gradient(135deg, #00e5ff, #0077ff);
