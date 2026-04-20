@@ -264,28 +264,144 @@ function strategyMapImageUrl(mapObj) {
     return `https://cdn.brawlify.com/maps/regular/${slug}.png`;
 }
 
+let strategyCanvasSize = { width: 0, height: 0, dpr: 1 };
+let strategyLabels = [];
+let strategyDraggingLabelIndex = -1;
+let strategyDragOffset = { x: 0, y: 0 };
+let strategyInkCanvas = null;
+let strategyInkCtx = null;
+
+function strategyEnsureInkCanvas() {
+    if (!strategyInkCanvas) {
+        strategyInkCanvas = document.createElement('canvas');
+    }
+    if (!strategyInkCtx && strategyInkCanvas) {
+        strategyInkCtx = strategyInkCanvas.getContext('2d');
+    }
+}
+
 function strategyResizeCanvas() {
     if (!strategyCanvas || !strategyMapImage) return;
     const rect = strategyMapImage.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    strategyCanvas.width = Math.round(rect.width);
-    strategyCanvas.height = Math.round(rect.height);
+    strategyEnsureInkCanvas();
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    strategyCanvasSize = { width: Math.round(rect.width), height: Math.round(rect.height), dpr };
+
+    strategyCanvas.width = Math.round(rect.width * dpr);
+    strategyCanvas.height = Math.round(rect.height * dpr);
+    strategyInkCanvas.width = Math.round(rect.width * dpr);
+    strategyInkCanvas.height = Math.round(rect.height * dpr);
+
+    const vctx = strategyCanvas.getContext('2d');
+    vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    strategyInkCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    strategyComposite();
+}
+
+function strategyComposite() {
+    if (!strategyCanvas) return;
+    const ctx = strategyCanvas.getContext('2d');
+    const { width, height } = strategyCanvasSize;
+    if (!width || !height) return;
+    ctx.clearRect(0, 0, width, height);
+    if (strategyInkCanvas) {
+        ctx.drawImage(strategyInkCanvas, 0, 0, width, height);
+    }
+    strategyDrawLabels(ctx);
+}
+
+function strategyDrawLabels(ctx) {
+    if (!ctx || !Array.isArray(strategyLabels)) return;
+    ctx.save();
+    ctx.textBaseline = 'top';
+    ctx.font = '700 18px Outfit, sans-serif';
+    strategyLabels.forEach(lbl => {
+        if (!lbl || !lbl.text) return;
+        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+        ctx.lineWidth = 4;
+        ctx.lineJoin = 'round';
+        ctx.fillStyle = lbl.color || '#ff4d4d';
+        ctx.strokeText(lbl.text, lbl.x, lbl.y);
+        ctx.fillText(lbl.text, lbl.x, lbl.y);
+    });
+    ctx.restore();
+}
+
+function strategyLabelHitTest(pt) {
+    if (!strategyCanvas) return -1;
+    const ctx = strategyCanvas.getContext('2d');
+    ctx.save();
+    ctx.font = '700 18px Outfit, sans-serif';
+    for (let i = strategyLabels.length - 1; i >= 0; i--) {
+        const lbl = strategyLabels[i];
+        if (!lbl || !lbl.text) continue;
+        const w = ctx.measureText(lbl.text).width;
+        const h = 20;
+        if (pt.x >= lbl.x - 4 && pt.x <= lbl.x + w + 4 && pt.y >= lbl.y - 4 && pt.y <= lbl.y + h + 4) {
+            ctx.restore();
+            return i;
+        }
+    }
+    ctx.restore();
+    return -1;
 }
 
 function strategyLoad() {
     if (!strategyCanvas || !strategyMapKey) return;
-    const ctx = strategyCanvas.getContext('2d');
-    ctx.clearRect(0, 0, strategyCanvas.width, strategyCanvas.height);
+    strategyEnsureInkCanvas();
     const data = localStorage.getItem(strategyStorageKey(strategyMapKey));
-    if (!data) return;
+    const clearAndComposite = () => {
+        strategyLabels = [];
+        if (strategyInkCtx) strategyInkCtx.clearRect(0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
+        strategyComposite();
+    };
+    if (!data) {
+        clearAndComposite();
+        return;
+    }
+    let inkDataUrl = '';
+    let labels = [];
+    try {
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === 'object' && parsed.ink) {
+            inkDataUrl = parsed.ink;
+            labels = Array.isArray(parsed.labels) ? parsed.labels : [];
+        } else if (typeof parsed === 'string') {
+            inkDataUrl = parsed;
+        }
+    } catch {
+        inkDataUrl = data;
+    }
+    strategyLabels = labels.map(l => ({
+        text: String(l.text || ''),
+        x: Number(l.x) || 20,
+        y: Number(l.y) || 20,
+        color: String(l.color || '#ff4d4d')
+    })).filter(l => l.text.trim().length > 0);
+    strategyInkCtx.clearRect(0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
+    if (!inkDataUrl) {
+        strategyComposite();
+        return;
+    }
     const img = new Image();
-    img.onload = () => ctx.drawImage(img, 0, 0, strategyCanvas.width, strategyCanvas.height);
-    img.src = data;
+    img.onload = () => {
+        strategyInkCtx.drawImage(img, 0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
+        strategyComposite();
+    };
+    img.onerror = () => {
+        strategyComposite();
+    };
+    img.src = inkDataUrl;
 }
 
 function strategySave(showToast = false) {
     if (!strategyCanvas || !strategyMapKey) return;
-    localStorage.setItem(strategyStorageKey(strategyMapKey), strategyCanvas.toDataURL('image/png'));
+    const payload = {
+        ink: strategyInkCanvas ? strategyInkCanvas.toDataURL('image/png') : '',
+        labels: strategyLabels
+    };
+    localStorage.setItem(strategyStorageKey(strategyMapKey), JSON.stringify(payload));
     if (showToast) {
         const msg = document.getElementById('strategy-save-msg');
         if (msg) {
@@ -296,8 +412,8 @@ function strategySave(showToast = false) {
 }
 
 function strategyDrawArrow(from, to, color) {
-    if (!strategyCanvas) return;
-    const ctx = strategyCanvas.getContext('2d');
+    if (!strategyInkCtx) return;
+    const ctx = strategyInkCtx;
     const head = 12;
     const dx = to.x - from.x;
     const dy = to.y - from.y;
@@ -523,36 +639,63 @@ async function init() {
         const toolSel = document.getElementById('strategy-tool-select');
         if (toolSel) toolSel.addEventListener('change', () => { strategyTool = toolSel.value; });
         const colorInput = document.getElementById('strategy-color');
+        const textInput = document.getElementById('strategy-text-input');
         strategyCanvas.addEventListener('mousedown', ev => {
             if (!strategyMapKey) return;
             const pt = strategyCanvasPoint(ev);
-            strategyDrawing = true;
-            strategyStart = pt;
             if (strategyTool === 'text') {
-                const txt = prompt('Strategy text:');
-                if (txt) {
-                    const ctx = strategyCanvas.getContext('2d');
-                    ctx.fillStyle = colorInput ? colorInput.value : '#ff4d4d';
-                    ctx.font = '600 18px Outfit, sans-serif';
-                    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-                    ctx.lineWidth = 4;
-                    ctx.strokeText(txt, pt.x, pt.y);
-                    ctx.fillText(txt, pt.x, pt.y);
+                const hitIdx = strategyLabelHitTest(pt);
+                if (hitIdx >= 0) {
+                    strategyDraggingLabelIndex = hitIdx;
+                    strategyDragOffset = {
+                        x: pt.x - strategyLabels[hitIdx].x,
+                        y: pt.y - strategyLabels[hitIdx].y
+                    };
+                    strategyDrawing = true;
+                } else {
+                    const txt = (textInput && textInput.value.trim()) ? textInput.value.trim() : 'New call';
+                    strategyLabels.push({
+                        text: txt,
+                        x: pt.x,
+                        y: pt.y,
+                        color: colorInput ? colorInput.value : '#ff4d4d'
+                    });
+                    strategyComposite();
                     strategySave();
                 }
-                strategyDrawing = false;
+                return;
             }
+            if (strategyTool === 'erase') {
+                const hitIdx = strategyLabelHitTest(pt);
+                if (hitIdx >= 0) {
+                    strategyLabels.splice(hitIdx, 1);
+                    strategyComposite();
+                    strategySave();
+                    return;
+                }
+                if (!strategyInkCtx) return;
+            }
+            strategyDrawing = true;
+            strategyStart = pt;
         });
         strategyCanvas.addEventListener('mousemove', ev => {
-            if (!strategyDrawing || strategyTool !== 'erase') return;
             const pt = strategyCanvasPoint(ev);
-            const ctx = strategyCanvas.getContext('2d');
-            ctx.save();
-            ctx.globalCompositeOperation = 'destination-out';
-            ctx.beginPath();
-            ctx.arc(pt.x, pt.y, 12, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
+            if (strategyTool === 'text' && strategyDrawing && strategyDraggingLabelIndex >= 0) {
+                const lbl = strategyLabels[strategyDraggingLabelIndex];
+                lbl.x = pt.x - strategyDragOffset.x;
+                lbl.y = pt.y - strategyDragOffset.y;
+                strategyComposite();
+                return;
+            }
+            if (!strategyDrawing || strategyTool !== 'erase') return;
+            if (!strategyInkCtx) return;
+            strategyInkCtx.save();
+            strategyInkCtx.globalCompositeOperation = 'destination-out';
+            strategyInkCtx.beginPath();
+            strategyInkCtx.arc(pt.x, pt.y, 12, 0, Math.PI * 2);
+            strategyInkCtx.fill();
+            strategyInkCtx.restore();
+            strategyComposite();
         });
         strategyCanvas.addEventListener('mouseup', ev => {
             if (!strategyDrawing) return;
@@ -562,17 +705,24 @@ async function init() {
             }
             strategyDrawing = false;
             strategyStart = null;
+            strategyDraggingLabelIndex = -1;
+            strategyDragOffset = { x: 0, y: 0 };
+            strategyComposite();
             strategySave();
         });
         strategyCanvas.addEventListener('mouseleave', () => {
             if (strategyDrawing && strategyTool === 'erase') strategySave();
             strategyDrawing = false;
             strategyStart = null;
+            strategyDraggingLabelIndex = -1;
+            strategyDragOffset = { x: 0, y: 0 };
         });
         const clearBtn = document.getElementById('strategy-clear-btn');
         if (clearBtn) clearBtn.addEventListener('click', () => {
-            if (!strategyCanvas) return;
-            strategyCanvas.getContext('2d').clearRect(0, 0, strategyCanvas.width, strategyCanvas.height);
+            if (!strategyCanvas || !strategyInkCtx) return;
+            strategyInkCtx.clearRect(0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
+            strategyLabels = [];
+            strategyComposite();
             strategySave(true);
         });
         const saveBtn = document.getElementById('strategy-save-btn');
@@ -581,11 +731,11 @@ async function init() {
         if (exportBtn) exportBtn.addEventListener('click', () => {
             if (!strategyMapImage || !strategyCanvas) return;
             const out = document.createElement('canvas');
-            out.width = strategyCanvas.width;
-            out.height = strategyCanvas.height;
+            out.width = strategyCanvasSize.width * strategyCanvasSize.dpr;
+            out.height = strategyCanvasSize.height * strategyCanvasSize.dpr;
             const octx = out.getContext('2d');
             octx.drawImage(strategyMapImage, 0, 0, out.width, out.height);
-            octx.drawImage(strategyCanvas, 0, 0);
+            octx.drawImage(strategyCanvas, 0, 0, out.width, out.height);
             const a = document.createElement('a');
             a.href = out.toDataURL('image/png');
             a.download = `strategy-${(strategyMapKey || 'map').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`;
@@ -2020,53 +2170,6 @@ function renderCollection(brawlersData) {
             </div>
         `;
         collectionGrid.appendChild(card);
-    });
-}
-
-// ======================================
-// Resource Tracker
-// ======================================
-const RESOURCE_KEYS = ['coins', 'pp', 'gems', 'bling', 'credits', 'stardrops'];
-
-function loadResources() {
-    const saved = JSON.parse(localStorage.getItem('brawl_resources')) || {};
-    
-    RESOURCE_KEYS.forEach(key => {
-        const val = saved[key] || 0;
-        const displayEl = document.getElementById(`res-${key}-val`);
-        const inputEl = document.getElementById(`res-${key}-input`);
-        if (displayEl) displayEl.textContent = Number(val).toLocaleString();
-        if (inputEl) inputEl.value = val;
-    });
-    
-    const lastUpdated = document.getElementById('resources-last-updated');
-    if (lastUpdated && saved._lastUpdated) {
-        const d = new Date(saved._lastUpdated);
-        lastUpdated.textContent = `Last updated: ${d.toLocaleDateString()} at ${d.toLocaleTimeString()}`;
-    }
-}
-
-function setupResourceForm() {
-    const form = document.getElementById('resource-form');
-    if (!form) return;
-    
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        
-        const data = { _lastUpdated: new Date().toISOString() };
-        RESOURCE_KEYS.forEach(key => {
-            const inputEl = document.getElementById(`res-${key}-input`);
-            data[key] = inputEl ? parseInt(inputEl.value) || 0 : 0;
-        });
-        
-        localStorage.setItem('brawl_resources', JSON.stringify(data));
-        loadResources(); // refresh display cards
-        
-        const msg = document.getElementById('res-save-msg');
-        if (msg) {
-            msg.style.display = 'block';
-            setTimeout(() => { msg.style.display = 'none'; }, 3000);
-        }
     });
 }
 
