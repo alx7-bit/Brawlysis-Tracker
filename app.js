@@ -319,12 +319,40 @@ function strategyDrawLabels(ctx) {
     ctx.font = '700 18px Outfit, sans-serif';
     strategyLabels.forEach(lbl => {
         if (!lbl || !lbl.text) return;
-        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
-        ctx.lineWidth = 4;
-        ctx.lineJoin = 'round';
-        ctx.fillStyle = lbl.color || '#ff4d4d';
-        ctx.strokeText(lbl.text, lbl.x, lbl.y);
-        ctx.fillText(lbl.text, lbl.x, lbl.y);
+        const txt = String(lbl.text);
+        const textWidth = ctx.measureText(txt).width;
+        const padX = 8;
+        const padY = 4;
+        const boxW = textWidth + padX * 2;
+        const boxH = 24;
+
+        // High-contrast chip to keep labels readable on any map texture.
+        ctx.fillStyle = 'rgba(5, 8, 14, 0.82)';
+        ctx.strokeStyle = lbl.color || '#ff4d4d';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const r = 6;
+        const x = lbl.x - padX;
+        const y = lbl.y - padY;
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + boxW - r, y);
+        ctx.quadraticCurveTo(x + boxW, y, x + boxW, y + r);
+        ctx.lineTo(x + boxW, y + boxH - r);
+        ctx.quadraticCurveTo(x + boxW, y + boxH, x + boxW - r, y + boxH);
+        ctx.lineTo(x + r, y + boxH);
+        ctx.quadraticCurveTo(x, y + boxH, x, y + boxH - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.shadowColor = 'rgba(0,0,0,0.55)';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 1;
+        ctx.fillText(txt, lbl.x, lbl.y);
     });
     ctx.restore();
 }
