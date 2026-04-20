@@ -396,7 +396,10 @@ function strategyOpenInlineEditor(pt, color) {
     input.dataset.y = String(Math.max(6, Math.round(pt.y)));
     input.dataset.color = color || '#ff4d4d';
     input.dataset.size = String(strategyCurrentFontSize());
-    input.style.fontSize = `${strategyCurrentFontSize()}px`;
+    // Keep the temporary input compact; label size is applied after save.
+    input.style.fontSize = '13px';
+    input.style.minWidth = '110px';
+    input.style.maxWidth = '180px';
     wrap.appendChild(input);
     strategyEditorEl = input;
     input.focus();
