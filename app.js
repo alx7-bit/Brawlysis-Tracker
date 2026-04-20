@@ -640,25 +640,77 @@ function autoStrategyModeTemplate(modeName) {
 
 function autoStrategyMapOverride(mapName) {
     const n = String(mapName || '').toLowerCase();
-    if (n.includes('center stage')) {
-        return [
-            { text: 'Center is high risk/high value: only take with support fire', x: 225, y: 220, color: '#f59e0b', size: 13 },
-            { text: 'Use side bushes for flanks then collapse center', x: 560, y: 120, color: '#22d3ee', size: 13 }
-        ];
-    }
-    if (n.includes('hard rock mine')) {
-        return [
-            { text: 'Contest mine early, then one hold + two lane pressure', x: 255, y: 230, color: '#f59e0b', size: 13 },
-            { text: 'Rotate through side ramps after gem advantage', x: 575, y: 130, color: '#22d3ee', size: 13 }
-        ];
-    }
-    if (n.includes("belle's rock")) {
-        return [
-            { text: 'Three-lane spacing; don\'t stack peeks', x: 245, y: 235, color: '#f59e0b', size: 13 },
-            { text: 'Abuse wall cover, pinch only after chip lead', x: 550, y: 130, color: '#22d3ee', size: 13 }
-        ];
-    }
-    return [];
+    const webNotes = {
+        'center stage': [
+            'Web: center push is strong but punishable; push with support fire',
+            'Web: use side bushes for flank timings before committing ball'
+        ],
+        'hard rock mine': [
+            'Web: mine control first, then rotate side ramps to deny flanks',
+            'Web: one gem hold + two lane pressure is safer than full stack mid'
+        ],
+        "belle's rock": [
+            'Web: three-lane spacing is key; avoid double peeking same lane',
+            'Web: play wall cover and pinch only after chip damage advantage'
+        ],
+        'double swoosh': [
+            'Web: side bushes decide this map; clear/check before stepping mid',
+            'Web: hold center vision while threatening both wing flanks'
+        ],
+        'gem fort': [
+            'Web: center choke control > random dives; protect gem carrier path',
+            'Web: rotate through bush lanes for safer gem resets'
+        ],
+        'undermine': [
+            'Web: open mid + side-bush pressure; keep support near gem carrier',
+            'Web: split 1-2 around center walls to prevent pinches'
+        ],
+        'safe zone': [
+            'Web: establish lane control first; safe damage windows come after picks',
+            'Web: keep one defender ready while two pressure objective'
+        ],
+        'hot potato': [
+            'Web: contest center objective early; coordinate push/defend roles',
+            'Web: mobility + sustain combo performs better than isolated dives'
+        ],
+        'bridge too far': [
+            'Web: long-range cross-lane pressure is strongest here',
+            'Web: punish overextends from bridge lane; rotate before full commit'
+        ],
+        'out in the open': [
+            'Web: open sightlines favor sharpshooter crossfire',
+            'Web: use center bushes/water angles for quick peek-reset'
+        ],
+        'new horizons': [
+            'Web: respect wall-break timing; map opens quickly after first supers',
+            'Web: prioritize angle control over hard chases'
+        ],
+        'flaring phoenix': [
+            'Web: control choke points and force enemies into predictable paths',
+            'Web: hold spacing and collapse only when you have utility advantage'
+        ],
+        'ring of fire': [
+            'Mode+web pattern: hold zone edges, not center overcommit',
+            'Mode+web pattern: stagger respawns and rotate with utility'
+        ],
+        'shooting star': [
+            'Mode+web pattern: long lane crossfire and patient peeks win',
+            'Mode+web pattern: protect star lead; avoid risky trades late'
+        ]
+    };
+
+    const notes = Object.entries(webNotes).find(([k]) => n.includes(k))?.[1] || [];
+    const labels = [];
+    notes.forEach((t, i) => {
+        labels.push({
+            text: t,
+            x: 24,
+            y: 56 + i * 34,
+            color: '#38bdf8',
+            size: 12
+        });
+    });
+    return labels;
 }
 
 function autoStrategyPayloadForMap(mapObj) {
