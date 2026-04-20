@@ -271,6 +271,9 @@ let strategyDragOffset = { x: 0, y: 0 };
 let strategyInkCanvas = null;
 let strategyInkCtx = null;
 let strategyEditorEl = null;
+let strategyUndoStack = [];
+let strategyUndoIndex = -1;
+let strategySuspendUndoPush = false;
 const STRATEGY_TEXT_SIZE_MAP = { sm: 12, md: 14, lg: 17 };
 
 function strategyCurrentFontSize() {
@@ -286,6 +289,72 @@ function strategyEnsureInkCanvas() {
     if (!strategyInkCtx && strategyInkCanvas) {
         strategyInkCtx = strategyInkCanvas.getContext('2d');
     }
+}
+
+function strategySnapshot() {
+    return {
+        ink: strategyInkCanvas ? strategyInkCanvas.toDataURL('image/png') : '',
+        labels: JSON.parse(JSON.stringify(strategyLabels || []))
+    };
+}
+
+function strategyStateSignature(snap) {
+    return `${snap.ink.length}:${JSON.stringify(snap.labels)}`;
+}
+
+function strategyPushUndoSnapshot() {
+    if (strategySuspendUndoPush) return;
+    const snap = strategySnapshot();
+    const sig = strategyStateSignature(snap);
+    if (strategyUndoIndex >= 0) {
+        const currentSig = strategyStateSignature(strategyUndoStack[strategyUndoIndex]);
+        if (sig === currentSig) return;
+    }
+    if (strategyUndoIndex < strategyUndoStack.length - 1) {
+        strategyUndoStack = strategyUndoStack.slice(0, strategyUndoIndex + 1);
+    }
+    strategyUndoStack.push(snap);
+    if (strategyUndoStack.length > 60) strategyUndoStack.shift();
+    strategyUndoIndex = strategyUndoStack.length - 1;
+}
+
+function strategyResetUndoHistory() {
+    strategyUndoStack = [];
+    strategyUndoIndex = -1;
+    strategyPushUndoSnapshot();
+}
+
+function strategyApplySnapshot(snap, persist = true) {
+    if (!snap || !strategyInkCtx) return;
+    strategySuspendUndoPush = true;
+    strategyLabels = JSON.parse(JSON.stringify(snap.labels || []));
+    strategyInkCtx.clearRect(0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
+    if (snap.ink) {
+        const img = new Image();
+        img.onload = () => {
+            strategyInkCtx.drawImage(img, 0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
+            strategyComposite();
+            if (persist) strategySave(false);
+            strategySuspendUndoPush = false;
+        };
+        img.onerror = () => {
+            strategyComposite();
+            if (persist) strategySave(false);
+            strategySuspendUndoPush = false;
+        };
+        img.src = snap.ink;
+        return;
+    }
+    strategyComposite();
+    if (persist) strategySave(false);
+    strategySuspendUndoPush = false;
+}
+
+function strategyUndo() {
+    if (strategyUndoIndex <= 0) return;
+    strategyUndoIndex -= 1;
+    const snap = strategyUndoStack[strategyUndoIndex];
+    strategyApplySnapshot(snap, true);
 }
 
 function strategyResizeCanvas() {
@@ -379,6 +448,7 @@ function strategyCloseInlineEditor(save) {
         strategyLabels.push({ text, x, y, color, size });
         strategyComposite();
         strategySave();
+        strategyPushUndoSnapshot();
     }
 }
 
@@ -446,6 +516,7 @@ function strategyLoad() {
     };
     if (!data) {
         clearAndComposite();
+        strategyResetUndoHistory();
         return;
     }
     let inkDataUrl = '';
@@ -478,15 +549,18 @@ function strategyLoad() {
     strategyInkCtx.clearRect(0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
     if (!inkDataUrl) {
         strategyComposite();
+        strategyResetUndoHistory();
         return;
     }
     const img = new Image();
     img.onload = () => {
         strategyInkCtx.drawImage(img, 0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
         strategyComposite();
+        strategyResetUndoHistory();
     };
     img.onerror = () => {
         strategyComposite();
+        strategyResetUndoHistory();
     };
     img.src = inkDataUrl;
 }
@@ -785,6 +859,7 @@ async function init() {
                         });
                         strategyComposite();
                         strategySave();
+                        strategyPushUndoSnapshot();
                     } else {
                         strategyOpenInlineEditor(pt, colorInput ? colorInput.value : '#ff4d4d');
                     }
@@ -797,6 +872,7 @@ async function init() {
                     strategyLabels.splice(hitIdx, 1);
                     strategyComposite();
                     strategySave();
+                    strategyPushUndoSnapshot();
                     return;
                 }
                 if (!strategyInkCtx) return;
@@ -835,9 +911,13 @@ async function init() {
             strategyDragOffset = { x: 0, y: 0 };
             strategyComposite();
             strategySave();
+            strategyPushUndoSnapshot();
         });
         strategyCanvas.addEventListener('mouseleave', () => {
-            if (strategyDrawing && strategyTool === 'erase') strategySave();
+            if (strategyDrawing && strategyTool === 'erase') {
+                strategySave();
+                strategyPushUndoSnapshot();
+            }
             strategyDrawing = false;
             strategyStart = null;
             strategyDraggingLabelIndex = -1;
@@ -851,7 +931,10 @@ async function init() {
             strategyLabels = [];
             strategyComposite();
             strategySave(true);
+            strategyPushUndoSnapshot();
         });
+        const undoBtn = document.getElementById('strategy-undo-btn');
+        if (undoBtn) undoBtn.addEventListener('click', () => strategyUndo());
         const saveBtn = document.getElementById('strategy-save-btn');
         if (saveBtn) saveBtn.addEventListener('click', () => strategySave(true));
         const exportBtn = document.getElementById('strategy-export-btn');
@@ -867,6 +950,16 @@ async function init() {
             a.href = out.toDataURL('image/png');
             a.download = `strategy-${(strategyMapKey || 'map').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`;
             a.click();
+        });
+        document.addEventListener('keydown', e => {
+            const isUndo = (e.ctrlKey || e.metaKey) && !e.shiftKey && String(e.key).toLowerCase() === 'z';
+            if (!isUndo) return;
+            const activeView = document.querySelector('.view.active');
+            if (!activeView || activeView.id !== 'strategies') return;
+            const targetTag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+            if (targetTag === 'input' || targetTag === 'textarea') return;
+            e.preventDefault();
+            strategyUndo();
         });
     }
 }
