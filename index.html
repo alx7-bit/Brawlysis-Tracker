@@ -19,7 +19,7 @@
                 <li data-view="matches">Match History</li>
                 <li data-view="analytics">Match Analytics</li>
                 <li data-view="collection">Collection</li>
-                <li data-view="resources">Resources</li>
+                <li data-view="strategies">Map Strategies</li>
                 <li data-view="settings">Settings (Map Pool)</li>
             </ul>
         </nav>
@@ -172,10 +172,11 @@
                         <li class="empty-state">Select a map above to see brawler win rates.</li>
                     </ul>
                     <div id="analytics-matchup-panel" style="display: none; margin-top: 1rem;">
-                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">Uses enemy brawlers from <strong>synced</strong> ranked games. A win or loss counts once per enemy brawler that appeared on the other team (3v3: up to three per game).</p>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">Type an enemy brawler you want to counter. We rank your best picks using your synced ranked match history.</p>
                         <div class="form-group" style="margin-bottom: 0.5rem;">
-                            <label for="matchup-self-select" style="display: block; margin-bottom: 0.35rem; color: var(--text-muted); font-size: 0.9rem;">Your brawler</label>
-                            <select id="matchup-self-select" style="width: 100%; max-width: 360px; background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; font-family: var(--font-main);"></select>
+                            <label for="matchup-target-input" style="display: block; margin-bottom: 0.35rem; color: var(--text-muted); font-size: 0.9rem;">Enemy brawler to counter</label>
+                            <input id="matchup-target-input" list="matchup-target-list" placeholder="Start typing a brawler..." autocomplete="off" style="width: 100%; max-width: 360px; background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 0.6rem 0.8rem; font-family: var(--font-main);">
+                            <datalist id="matchup-target-list"></datalist>
                         </div>
                         <div id="matchup-table-container"></div>
                     </div>
@@ -196,93 +197,39 @@
                 </div>
             </section>
 
-            <!-- Resources View -->
-            <section id="resources" class="view">
+            <!-- Map Strategy Builder -->
+            <section id="strategies" class="view">
                 <div class="header-with-actions">
-                    <h2>Resource Tracker</h2>
-                    <div id="resources-last-updated" style="color: var(--text-muted); font-size: 0.85rem;"></div>
+                    <h2>Map Strategies</h2>
                 </div>
 
-                <!-- Resource Summary Cards -->
-                <div class="resource-summary-grid">
-                    <div class="resource-card" data-resource="coins">
-                        <div class="resource-icon">🪙</div>
-                        <div class="resource-info">
-                            <span class="resource-label">Coins</span>
-                            <span class="resource-value" id="res-coins-val">0</span>
+                <div class="stat-card" style="align-items: flex-start;">
+                    <div style="display:flex; gap:0.75rem; flex-wrap:wrap; width:100%; margin-bottom:1rem; align-items:end;">
+                        <div class="form-group" style="margin:0; min-width:260px;">
+                            <label for="strategy-map-select">Map</label>
+                            <select id="strategy-map-select"></select>
                         </div>
+                        <div class="form-group" style="margin:0;">
+                            <label for="strategy-tool-select">Tool</label>
+                            <select id="strategy-tool-select">
+                                <option value="arrow">Arrow</option>
+                                <option value="text">Text</option>
+                                <option value="erase">Erase</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label for="strategy-color">Color</label>
+                            <input type="color" id="strategy-color" value="#ff4d4d" style="width:46px; height:40px; border:none; background:transparent; padding:0;">
+                        </div>
+                        <button id="strategy-clear-btn" class="danger-btn" style="height:40px;">Clear</button>
+                        <button id="strategy-save-btn" class="primary-btn" style="height:40px;">Save Notes</button>
+                        <button id="strategy-export-btn" class="primary-btn" style="height:40px; background: linear-gradient(135deg, #6d28d9, #7c3aed);">Export PNG</button>
                     </div>
-                    <div class="resource-card" data-resource="powerpoints">
-                        <div class="resource-icon">⚡</div>
-                        <div class="resource-info">
-                            <span class="resource-label">Power Points</span>
-                            <span class="resource-value" id="res-pp-val">0</span>
-                        </div>
+                    <div id="strategy-save-msg" style="color: var(--color-win); margin-bottom: 0.7rem; display:none;">Saved strategy for this map.</div>
+                    <div class="strategy-board-wrap">
+                        <img id="strategy-map-image" alt="Map" class="strategy-map-image">
+                        <canvas id="strategy-canvas" class="strategy-canvas"></canvas>
                     </div>
-                    <div class="resource-card" data-resource="gems">
-                        <div class="resource-icon">💎</div>
-                        <div class="resource-info">
-                            <span class="resource-label">Gems</span>
-                            <span class="resource-value" id="res-gems-val">0</span>
-                        </div>
-                    </div>
-                    <div class="resource-card" data-resource="bling">
-                        <div class="resource-icon">✨</div>
-                        <div class="resource-info">
-                            <span class="resource-label">Bling</span>
-                            <span class="resource-value" id="res-bling-val">0</span>
-                        </div>
-                    </div>
-                    <div class="resource-card" data-resource="credits">
-                        <div class="resource-icon">🎫</div>
-                        <div class="resource-info">
-                            <span class="resource-label">Credits</span>
-                            <span class="resource-value" id="res-credits-val">0</span>
-                        </div>
-                    </div>
-                    <div class="resource-card" data-resource="stardrops">
-                        <div class="resource-icon">⭐</div>
-                        <div class="resource-info">
-                            <span class="resource-label">Star Drops</span>
-                            <span class="resource-value" id="res-stardrops-val">0</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Manual Update Form -->
-                <div class="stat-card" style="max-width: 700px; margin-top: 2rem; align-items: flex-start;">
-                    <h3 style="margin-bottom: 0.5rem;">Update Resources</h3>
-                    <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">The Brawl Stars API does not expose wallet data. Manually enter your current amounts below to keep track.</p>
-                    <form id="resource-form" style="width: 100%;">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-                            <div class="form-group">
-                                <label>🪙 Coins</label>
-                                <input type="number" id="res-coins-input" min="0" value="0" class="resource-input">
-                            </div>
-                            <div class="form-group">
-                                <label>⚡ Power Points</label>
-                                <input type="number" id="res-pp-input" min="0" value="0" class="resource-input">
-                            </div>
-                            <div class="form-group">
-                                <label>💎 Gems</label>
-                                <input type="number" id="res-gems-input" min="0" value="0" class="resource-input">
-                            </div>
-                            <div class="form-group">
-                                <label>✨ Bling</label>
-                                <input type="number" id="res-bling-input" min="0" value="0" class="resource-input">
-                            </div>
-                            <div class="form-group">
-                                <label>🎫 Credits</label>
-                                <input type="number" id="res-credits-input" min="0" value="0" class="resource-input">
-                            </div>
-                            <div class="form-group">
-                                <label>⭐ Star Drops</label>
-                                <input type="number" id="res-stardrops-input" min="0" value="0" class="resource-input">
-                            </div>
-                        </div>
-                        <button type="submit" class="primary-btn" style="margin-top: 1.5rem;">💾 Save Resources</button>
-                        <div id="res-save-msg" style="color: var(--color-win); margin-top: 1rem; display: none;">Resources saved!</div>
-                    </form>
                 </div>
             </section>
 

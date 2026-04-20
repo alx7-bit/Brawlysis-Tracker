@@ -57,7 +57,7 @@ function opponentKeyFromRawName(rawUpper) {
     return `n:${normalizeBrawlerName(rawUpper)}`;
 }
 
-function opponentDisplayFromKey(key) {
+function brawlerDisplayFromKey(key) {
     if (key.startsWith('id:')) {
         const id = Number(key.slice(3));
         const gb = brawlers.find(x => Number(x.id) === id);
@@ -70,91 +70,73 @@ function opponentDisplayFromKey(key) {
 
 const MIN_MATCHUP_GAMES = 2;
 
-function populateMatchupSelfSelect(rankedMatches) {
-    const sel = document.getElementById('matchup-self-select');
-    if (!sel) return;
-    const keys = new Map();
+function populateMatchupTargetList(rankedMatches) {
+    const listEl = document.getElementById('matchup-target-list');
+    if (!listEl) return;
+    const prev = JSON.parse(localStorage.getItem('matchup_target_snapshot') || '[]');
+    const names = new Set(prev);
     rankedMatches.forEach(m => {
-        if (!m.opponentBrawlers || !m.opponentBrawlers.length) return;
-        const k = m.brawlerId && Number(m.brawlerId) > 0 ? `id:${m.brawlerId}` : `n:${normalizeBrawlerName(m.brawlerName)}`;
-        if (!keys.has(k)) keys.set(k, m.brawlerName || 'Unknown');
+        if (!Array.isArray(m.opponentBrawlers)) return;
+        m.opponentBrawlers.forEach(n => names.add(String(n || '').toUpperCase().trim()));
     });
-    const prev = sel.value;
-    sel.innerHTML = '';
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = '— Select your brawler —';
-    sel.appendChild(placeholder);
-    [...keys.entries()]
-        .sort((a, b) => a[1].localeCompare(b[1]))
-        .forEach(([k, label]) => {
+    listEl.innerHTML = '';
+    [...names]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b))
+        .forEach(name => {
             const opt = document.createElement('option');
-            opt.value = k;
-            opt.textContent = label;
-            sel.appendChild(opt);
+            opt.value = brawlerDisplayFromKey(opponentKeyFromRawName(name)).name;
+            listEl.appendChild(opt);
         });
-    if (prev && keys.has(prev)) {
-        sel.value = prev;
-        return;
-    }
-    let bestKey = null;
-    let bestN = 0;
-    keys.forEach((label, k) => {
-        const n = rankedMatches.filter(m => {
-            if (!m.opponentBrawlers || !m.opponentBrawlers.length) return false;
-            if (k.startsWith('id:')) return Number(m.brawlerId) === Number(k.slice(3));
-            const mk = m.brawlerId && Number(m.brawlerId) > 0 ? `id:${m.brawlerId}` : `n:${normalizeBrawlerName(m.brawlerName)}`;
-            return mk === k;
-        }).length;
-        if (n > bestN) {
-            bestN = n;
-            bestKey = k;
-        }
-    });
-    if (bestKey) sel.value = bestKey;
+    localStorage.setItem('matchup_target_snapshot', JSON.stringify([...names].filter(Boolean).slice(0, 400)));
 }
 
 function renderMatchupTable(rankedMatches) {
     const wrap = document.getElementById('matchup-table-container');
-    const sel = document.getElementById('matchup-self-select');
-    if (!wrap || !sel) return;
-    const key = sel.value;
-    if (!key) {
-        wrap.innerHTML = '<p class="empty-state" style="margin:0;">Select a brawler to see who you perform well or poorly against.</p>';
+    const input = document.getElementById('matchup-target-input');
+    if (!wrap || !input) return;
+    const targetRaw = input.value.trim();
+    if (!targetRaw) {
+        wrap.innerHTML = '<p class="empty-state" style="margin:0;">Type an enemy brawler to see your best counters.</p>';
         return;
     }
-    const myMatches = rankedMatches.filter(m => {
-        if (!m.opponentBrawlers || !m.opponentBrawlers.length) return false;
-        const mk = m.brawlerId && Number(m.brawlerId) > 0 ? `id:${m.brawlerId}` : `n:${normalizeBrawlerName(m.brawlerName)}`;
-        if (key.startsWith('id:')) return Number(m.brawlerId) === Number(key.slice(3));
-        return mk === key;
+    const targetKey = opponentKeyFromRawName(targetRaw);
+    const targetNorm = targetKey.startsWith('id:')
+        ? normalizeBrawlerName(brawlerDisplayFromKey(targetKey).name)
+        : targetKey.slice(2);
+
+    const vsTargetMatches = rankedMatches.filter(m => {
+        if (!Array.isArray(m.opponentBrawlers) || m.opponentBrawlers.length === 0) return false;
+        return m.opponentBrawlers.some(opp => normalizeBrawlerName(opp) === targetNorm);
     });
+
     const agg = {};
-    myMatches.forEach(m => {
+    vsTargetMatches.forEach(m => {
         if (m.result !== 'win' && m.result !== 'loss') return;
-        m.opponentBrawlers.forEach(raw => {
-            const ok = opponentKeyFromRawName(raw);
-            if (!agg[ok]) agg[ok] = { wins: 0, losses: 0 };
-            if (m.result === 'win') agg[ok].wins++;
-            else agg[ok].losses++;
-        });
+        const myKey = (m.brawlerId && Number(m.brawlerId) > 0)
+            ? `id:${m.brawlerId}`
+            : `n:${normalizeBrawlerName(m.brawlerName)}`;
+        if (!agg[myKey]) agg[myKey] = { wins: 0, losses: 0 };
+        if (m.result === 'win') agg[myKey].wins++;
+        else agg[myKey].losses++;
     });
+
     const rows = Object.entries(agg)
-        .map(([ok, s]) => {
+        .map(([k, s]) => {
             const total = s.wins + s.losses;
-            const disp = opponentDisplayFromKey(ok);
-            return { ok, ...s, total, wr: total ? Math.round((s.wins / total) * 100) : 0, ...disp };
+            const disp = brawlerDisplayFromKey(k);
+            return { key: k, ...s, total, wr: total ? Math.round((s.wins / total) * 100) : 0, ...disp };
         })
         .filter(r => r.total >= MIN_MATCHUP_GAMES)
         .sort((a, b) => b.wr - a.wr || b.total - a.total);
 
     if (rows.length === 0) {
-        wrap.innerHTML = `<p class="empty-state" style="margin:0;">Need at least ${MIN_MATCHUP_GAMES} ranked games vs the same enemy brawler on the other team. Sync more battles, or pick another brawler.</p>`;
+        wrap.innerHTML = `<p class="empty-state" style="margin:0;">Not enough data vs <strong>${brawlerDisplayFromKey(targetKey).name}</strong>. Need at least ${MIN_MATCHUP_GAMES} win/loss games per candidate brawler.</p>`;
         return;
     }
 
-    let html = '<table class="matchup-table"><thead><tr><th>Enemy brawler</th><th>Record</th><th>Win rate</th></tr></thead><tbody>';
-    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    let html = `<table class="matchup-table"><thead><tr><th>Your counter pick</th><th>Record vs ${esc(brawlerDisplayFromKey(targetKey).name)}</th><th>Win rate</th></tr></thead><tbody>`;
     rows.forEach(r => {
         const badgeColor = r.wr >= 50 ? 'var(--color-win)' : 'var(--color-loss)';
         const bg = r.wr >= 50 ? 'rgba(76, 219, 143, 0.1)' : 'rgba(235, 87, 87, 0.1)';
@@ -264,6 +246,105 @@ async function fetchBrawlApiJson(path) {
     return await res.json();
 }
 
+function strategyStorageKey(mapKey) {
+    return `brawl_strategy_v1:${mapKey}`;
+}
+
+function strategyMapKeyFor(mapObj) {
+    const mode = mapObj?.gameMode?.name || 'mode';
+    const map = mapObj?.name || 'map';
+    return `${mode}::${map}`;
+}
+
+function strategyMapImageUrl(mapObj) {
+    if (!mapObj) return '';
+    if (mapObj.imageUrl2) return mapObj.imageUrl2;
+    if (mapObj.imageUrl) return mapObj.imageUrl;
+    const slug = String(mapObj.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    return `https://cdn.brawlify.com/maps/regular/${slug}.png`;
+}
+
+function strategyResizeCanvas() {
+    if (!strategyCanvas || !strategyMapImage) return;
+    const rect = strategyMapImage.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    strategyCanvas.width = Math.round(rect.width);
+    strategyCanvas.height = Math.round(rect.height);
+}
+
+function strategyLoad() {
+    if (!strategyCanvas || !strategyMapKey) return;
+    const ctx = strategyCanvas.getContext('2d');
+    ctx.clearRect(0, 0, strategyCanvas.width, strategyCanvas.height);
+    const data = localStorage.getItem(strategyStorageKey(strategyMapKey));
+    if (!data) return;
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0, strategyCanvas.width, strategyCanvas.height);
+    img.src = data;
+}
+
+function strategySave(showToast = false) {
+    if (!strategyCanvas || !strategyMapKey) return;
+    localStorage.setItem(strategyStorageKey(strategyMapKey), strategyCanvas.toDataURL('image/png'));
+    if (showToast) {
+        const msg = document.getElementById('strategy-save-msg');
+        if (msg) {
+            msg.style.display = 'block';
+            setTimeout(() => { msg.style.display = 'none'; }, 1600);
+        }
+    }
+}
+
+function strategyDrawArrow(from, to, color) {
+    if (!strategyCanvas) return;
+    const ctx = strategyCanvas.getContext('2d');
+    const head = 12;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const ang = Math.atan2(dy, dx);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - head * Math.cos(ang - Math.PI / 6), to.y - head * Math.sin(ang - Math.PI / 6));
+    ctx.lineTo(to.x - head * Math.cos(ang + Math.PI / 6), to.y - head * Math.sin(ang + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+function strategyCanvasPoint(ev) {
+    const rect = strategyCanvas.getBoundingClientRect();
+    return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+}
+
+function populateStrategyMaps() {
+    if (!strategyMapSelect) return;
+    strategyMapSelect.innerHTML = '';
+    rankedMaps
+        .slice()
+        .sort((a, b) => `${a.gameMode?.name || ''} ${a.name}`.localeCompare(`${b.gameMode?.name || ''} ${b.name}`))
+        .forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = strategyMapKeyFor(m);
+            opt.textContent = `${(m.gameMode?.name || '').replace(/-/g, ' ')} - ${(m.name || '').replace(/-/g, ' ')}`;
+            opt.dataset.img = strategyMapImageUrl(m);
+            strategyMapSelect.appendChild(opt);
+        });
+    if (strategyMapSelect.options.length && !strategyMapSelect.value) strategyMapSelect.selectedIndex = 0;
+    if (strategyMapSelect.options.length) {
+        strategyMapKey = strategyMapSelect.value;
+        strategyMapImage.src = strategyMapSelect.selectedOptions[0].dataset.img || '';
+    }
+}
+
 // Global Game Mode Icon Safety Map (using official Brawlify IDs)
 const MODE_ICON_MAP = {
     'GEM-GRAB': '48000000', 'GEM_GRAB': '48000000', 'GEMGRAB': '48000000',
@@ -304,8 +385,12 @@ let selectedMode = null;
 // Analytics State
 let playedMaps = [];
 let selectedAnalyticsMap = null;
-let activeAnalyticsTab = 'map'; // 'map' | 'overall'
+let activeAnalyticsTab = 'map'; // 'map' | 'overall' | 'matchups'
 let activeMatchTab = 'ranked'; // 'ranked' or 'trophy'
+let strategyMapKey = '';
+let strategyDrawing = false;
+let strategyStart = null;
+let strategyTool = 'arrow';
 
 // DOM Elements
 const navLinks = document.querySelectorAll('.nav-links li');
@@ -367,6 +452,9 @@ const analyticsMapSearch = document.getElementById('analytics-map-search');
 const analyticsMapOptions = document.getElementById('analytics-map-options');
 const analyticsMapIcon = document.getElementById('analytics-map-selected-icon');
 const analyticsBrawlersList = document.getElementById('analytics-brawlers-list');
+const strategyMapSelect = document.getElementById('strategy-map-select');
+const strategyMapImage = document.getElementById('strategy-map-image');
+const strategyCanvas = document.getElementById('strategy-canvas');
 
 // Initialization
 async function init() {
@@ -386,10 +474,6 @@ async function init() {
     purgeNonRotationMatches();
     const savedCollection = JSON.parse(localStorage.getItem('brawl_collection_data')) || [];
     if (savedCollection.length > 0) renderCollection(savedCollection);
-    
-    // Initialize Resource Tracker
-    loadResources();
-    setupResourceForm();
     
     // Initial fetch logs & start auto-sync loop (45s interval for reliability)
     if (officialApiKey) {
@@ -414,12 +498,98 @@ async function init() {
         });
     }
 
-    const matchupSelfSelect = document.getElementById('matchup-self-select');
-    if (matchupSelfSelect) {
-        matchupSelfSelect.addEventListener('change', () => {
+    const matchupTargetInput = document.getElementById('matchup-target-input');
+    if (matchupTargetInput) {
+        matchupTargetInput.addEventListener('input', () => {
             if (activeAnalyticsTab === 'matchups') {
                 renderMatchupTable(matches.filter(m => m.isRanked !== false));
             }
+        });
+    }
+
+    if (strategyCanvas && strategyMapImage && strategyMapSelect) {
+        window.addEventListener('resize', () => {
+            strategyResizeCanvas();
+            strategyLoad();
+        });
+        strategyMapImage.addEventListener('load', () => {
+            strategyResizeCanvas();
+            strategyLoad();
+        });
+        strategyMapSelect.addEventListener('change', () => {
+            strategyMapKey = strategyMapSelect.value;
+            strategyMapImage.src = strategyMapSelect.selectedOptions[0]?.dataset?.img || '';
+        });
+        const toolSel = document.getElementById('strategy-tool-select');
+        if (toolSel) toolSel.addEventListener('change', () => { strategyTool = toolSel.value; });
+        const colorInput = document.getElementById('strategy-color');
+        strategyCanvas.addEventListener('mousedown', ev => {
+            if (!strategyMapKey) return;
+            const pt = strategyCanvasPoint(ev);
+            strategyDrawing = true;
+            strategyStart = pt;
+            if (strategyTool === 'text') {
+                const txt = prompt('Strategy text:');
+                if (txt) {
+                    const ctx = strategyCanvas.getContext('2d');
+                    ctx.fillStyle = colorInput ? colorInput.value : '#ff4d4d';
+                    ctx.font = '600 18px Outfit, sans-serif';
+                    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+                    ctx.lineWidth = 4;
+                    ctx.strokeText(txt, pt.x, pt.y);
+                    ctx.fillText(txt, pt.x, pt.y);
+                    strategySave();
+                }
+                strategyDrawing = false;
+            }
+        });
+        strategyCanvas.addEventListener('mousemove', ev => {
+            if (!strategyDrawing || strategyTool !== 'erase') return;
+            const pt = strategyCanvasPoint(ev);
+            const ctx = strategyCanvas.getContext('2d');
+            ctx.save();
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 12, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        });
+        strategyCanvas.addEventListener('mouseup', ev => {
+            if (!strategyDrawing) return;
+            const end = strategyCanvasPoint(ev);
+            if (strategyTool === 'arrow' && strategyStart) {
+                strategyDrawArrow(strategyStart, end, colorInput ? colorInput.value : '#ff4d4d');
+            }
+            strategyDrawing = false;
+            strategyStart = null;
+            strategySave();
+        });
+        strategyCanvas.addEventListener('mouseleave', () => {
+            if (strategyDrawing && strategyTool === 'erase') strategySave();
+            strategyDrawing = false;
+            strategyStart = null;
+        });
+        const clearBtn = document.getElementById('strategy-clear-btn');
+        if (clearBtn) clearBtn.addEventListener('click', () => {
+            if (!strategyCanvas) return;
+            strategyCanvas.getContext('2d').clearRect(0, 0, strategyCanvas.width, strategyCanvas.height);
+            strategySave(true);
+        });
+        const saveBtn = document.getElementById('strategy-save-btn');
+        if (saveBtn) saveBtn.addEventListener('click', () => strategySave(true));
+        const exportBtn = document.getElementById('strategy-export-btn');
+        if (exportBtn) exportBtn.addEventListener('click', () => {
+            if (!strategyMapImage || !strategyCanvas) return;
+            const out = document.createElement('canvas');
+            out.width = strategyCanvas.width;
+            out.height = strategyCanvas.height;
+            const octx = out.getContext('2d');
+            octx.drawImage(strategyMapImage, 0, 0, out.width, out.height);
+            octx.drawImage(strategyCanvas, 0, 0);
+            const a = document.createElement('a');
+            a.href = out.toDataURL('image/png');
+            a.download = `strategy-${(strategyMapKey || 'map').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.png`;
+            a.click();
         });
     }
 }
@@ -438,6 +608,10 @@ navLinks.forEach(link => {
             }
         });
         if (targetView === 'analytics') updateAnalyticsData();
+        if (targetView === 'strategies') {
+            strategyResizeCanvas();
+            strategyLoad();
+        }
     });
 });
 
@@ -713,6 +887,7 @@ async function fetchGameData() {
         modeSearch.placeholder = "Select Ranked Map & Mode...";
         modeSearch.disabled = false;
         renderModeOptions(rankedMaps);
+        populateStrategyMaps();
 
     } catch (error) {
         console.error("Error fetching BrawlAPI data:", error);
@@ -1588,15 +1763,18 @@ function updateAnalyticsData() {
         if (mapSection) mapSection.style.display = 'none';
         if (matchupPanel) matchupPanel.style.display = 'block';
         analyticsBrawlersList.style.display = 'none';
-        if (heading) heading.textContent = 'Matchups (your brawler vs enemy team)';
-        populateMatchupSelfSelect(rankedMatches);
-        const sel = document.getElementById('matchup-self-select');
+        if (heading) heading.textContent = 'Counter Picker (enemy -> your best picks)';
+        populateMatchupTargetList(rankedMatches);
+        const input = document.getElementById('matchup-target-input');
         const wrap = document.getElementById('matchup-table-container');
+        const hasOppData = rankedMatches.some(m => Array.isArray(m.opponentBrawlers) && m.opponentBrawlers.length > 0);
         if (rankedMatches.length === 0 && wrap) {
             wrap.innerHTML = '<p class="empty-state" style="margin:0;">No ranked matches recorded yet.</p>';
-        } else if (sel && sel.options.length <= 1 && wrap) {
+        } else if (!hasOppData && wrap) {
             wrap.innerHTML = '<p class="empty-state" style="margin:0;">No synced ranked games include enemy brawler data yet. Run <strong>Sync Now</strong> after playing — matchups are filled from the API battle log.</p>';
-        } else {
+        } else if (input && !input.value.trim() && wrap) {
+            wrap.innerHTML = '<p class="empty-state" style="margin:0;">Type an enemy brawler name to get your best counter picks.</p>';
+        } else if (wrap) {
             renderMatchupTable(rankedMatches);
         }
         return;
