@@ -270,6 +270,7 @@ let strategyDraggingLabelIndex = -1;
 let strategyDragOffset = { x: 0, y: 0 };
 let strategyInkCanvas = null;
 let strategyInkCtx = null;
+let strategyEditorEl = null;
 
 function strategyEnsureInkCanvas() {
     if (!strategyInkCanvas) {
@@ -326,6 +327,50 @@ function strategyDrawLabels(ctx) {
         ctx.fillText(lbl.text, lbl.x, lbl.y);
     });
     ctx.restore();
+}
+
+function strategyCloseInlineEditor(save) {
+    if (!strategyEditorEl) return;
+    const el = strategyEditorEl;
+    const text = el.value.trim();
+    const x = Number(el.dataset.x);
+    const y = Number(el.dataset.y);
+    const color = String(el.dataset.color || '#ff4d4d');
+    el.remove();
+    strategyEditorEl = null;
+    if (save && text) {
+        strategyLabels.push({ text, x, y, color });
+        strategyComposite();
+        strategySave();
+    }
+}
+
+function strategyOpenInlineEditor(pt, color) {
+    const wrap = document.querySelector('.strategy-board-wrap');
+    if (!wrap) return;
+    strategyCloseInlineEditor(false);
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'strategy-inline-editor';
+    input.placeholder = 'Type label and press Enter';
+    input.style.left = `${Math.max(6, Math.round(pt.x))}px`;
+    input.style.top = `${Math.max(6, Math.round(pt.y))}px`;
+    input.dataset.x = String(Math.max(6, Math.round(pt.x)));
+    input.dataset.y = String(Math.max(6, Math.round(pt.y)));
+    input.dataset.color = color || '#ff4d4d';
+    wrap.appendChild(input);
+    strategyEditorEl = input;
+    input.focus();
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            strategyCloseInlineEditor(true);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            strategyCloseInlineEditor(false);
+        }
+    });
+    input.addEventListener('blur', () => strategyCloseInlineEditor(true));
 }
 
 function strategyLabelHitTest(pt) {
@@ -414,24 +459,47 @@ function strategySave(showToast = false) {
 function strategyDrawArrow(from, to, color) {
     if (!strategyInkCtx) return;
     const ctx = strategyInkCtx;
-    const head = 12;
     const dx = to.x - from.x;
     const dy = to.y - from.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 8) return;
+    const head = Math.max(10, Math.min(18, len * 0.18));
     const ang = Math.atan2(dy, dx);
+    const tip = { x: to.x, y: to.y };
+    const end = { x: tip.x - head * Math.cos(ang), y: tip.y - head * Math.sin(ang) };
     ctx.save();
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 4;
+    // outline under-stroke for contrast
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 7;
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
+    ctx.lineTo(end.x, end.y);
     ctx.stroke();
+    // main stroke
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(to.x, to.y);
-    ctx.lineTo(to.x - head * Math.cos(ang - Math.PI / 6), to.y - head * Math.sin(ang - Math.PI / 6));
-    ctx.lineTo(to.x - head * Math.cos(ang + Math.PI / 6), to.y - head * Math.sin(ang + Math.PI / 6));
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+    // arrow head with outline
+    const p1 = { x: tip.x - head * Math.cos(ang - Math.PI / 6), y: tip.y - head * Math.sin(ang - Math.PI / 6) };
+    const p2 = { x: tip.x - head * Math.cos(ang + Math.PI / 6), y: tip.y - head * Math.sin(ang + Math.PI / 6) };
+    ctx.beginPath();
+    ctx.moveTo(tip.x, tip.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
     ctx.closePath();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(tip.x, tip.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.closePath();
+    ctx.fillStyle = color;
     ctx.fill();
     ctx.restore();
 }
@@ -642,6 +710,7 @@ async function init() {
         const textInput = document.getElementById('strategy-text-input');
         strategyCanvas.addEventListener('mousedown', ev => {
             if (!strategyMapKey) return;
+            strategyCloseInlineEditor(true);
             const pt = strategyCanvasPoint(ev);
             if (strategyTool === 'text') {
                 const hitIdx = strategyLabelHitTest(pt);
@@ -653,15 +722,19 @@ async function init() {
                     };
                     strategyDrawing = true;
                 } else {
-                    const txt = (textInput && textInput.value.trim()) ? textInput.value.trim() : 'New call';
-                    strategyLabels.push({
-                        text: txt,
-                        x: pt.x,
-                        y: pt.y,
-                        color: colorInput ? colorInput.value : '#ff4d4d'
-                    });
-                    strategyComposite();
-                    strategySave();
+                    const preset = textInput ? textInput.value.trim() : '';
+                    if (preset) {
+                        strategyLabels.push({
+                            text: preset,
+                            x: pt.x,
+                            y: pt.y,
+                            color: colorInput ? colorInput.value : '#ff4d4d'
+                        });
+                        strategyComposite();
+                        strategySave();
+                    } else {
+                        strategyOpenInlineEditor(pt, colorInput ? colorInput.value : '#ff4d4d');
+                    }
                 }
                 return;
             }
@@ -720,6 +793,7 @@ async function init() {
         const clearBtn = document.getElementById('strategy-clear-btn');
         if (clearBtn) clearBtn.addEventListener('click', () => {
             if (!strategyCanvas || !strategyInkCtx) return;
+            strategyCloseInlineEditor(false);
             strategyInkCtx.clearRect(0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
             strategyLabels = [];
             strategyComposite();
