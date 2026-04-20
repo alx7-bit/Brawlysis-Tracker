@@ -271,6 +271,13 @@ let strategyDragOffset = { x: 0, y: 0 };
 let strategyInkCanvas = null;
 let strategyInkCtx = null;
 let strategyEditorEl = null;
+const STRATEGY_TEXT_SIZE_MAP = { sm: 15, md: 18, lg: 22 };
+
+function strategyCurrentFontSize() {
+    const sel = document.getElementById('strategy-text-size-select');
+    const key = sel ? sel.value : 'md';
+    return STRATEGY_TEXT_SIZE_MAP[key] || 18;
+}
 
 function strategyEnsureInkCanvas() {
     if (!strategyInkCanvas) {
@@ -316,15 +323,16 @@ function strategyDrawLabels(ctx) {
     if (!ctx || !Array.isArray(strategyLabels)) return;
     ctx.save();
     ctx.textBaseline = 'top';
-    ctx.font = '700 18px Outfit, sans-serif';
     strategyLabels.forEach(lbl => {
         if (!lbl || !lbl.text) return;
         const txt = String(lbl.text);
+        const fontSize = Number(lbl.size) || 18;
+        ctx.font = `700 ${fontSize}px Outfit, sans-serif`;
         const textWidth = ctx.measureText(txt).width;
         const padX = 8;
-        const padY = 4;
+        const padY = Math.max(4, Math.round(fontSize * 0.22));
         const boxW = textWidth + padX * 2;
-        const boxH = 24;
+        const boxH = fontSize + padY * 2;
 
         // High-contrast chip to keep labels readable on any map texture.
         ctx.fillStyle = 'rgba(5, 8, 14, 0.82)';
@@ -364,10 +372,11 @@ function strategyCloseInlineEditor(save) {
     const x = Number(el.dataset.x);
     const y = Number(el.dataset.y);
     const color = String(el.dataset.color || '#ff4d4d');
+    const size = Number(el.dataset.size) || strategyCurrentFontSize();
     el.remove();
     strategyEditorEl = null;
     if (save && text) {
-        strategyLabels.push({ text, x, y, color });
+        strategyLabels.push({ text, x, y, color, size });
         strategyComposite();
         strategySave();
     }
@@ -386,6 +395,8 @@ function strategyOpenInlineEditor(pt, color) {
     input.dataset.x = String(Math.max(6, Math.round(pt.x)));
     input.dataset.y = String(Math.max(6, Math.round(pt.y)));
     input.dataset.color = color || '#ff4d4d';
+    input.dataset.size = String(strategyCurrentFontSize());
+    input.style.fontSize = `${strategyCurrentFontSize()}px`;
     wrap.appendChild(input);
     strategyEditorEl = input;
     input.focus();
@@ -405,12 +416,13 @@ function strategyLabelHitTest(pt) {
     if (!strategyCanvas) return -1;
     const ctx = strategyCanvas.getContext('2d');
     ctx.save();
-    ctx.font = '700 18px Outfit, sans-serif';
     for (let i = strategyLabels.length - 1; i >= 0; i--) {
         const lbl = strategyLabels[i];
         if (!lbl || !lbl.text) continue;
+        const fontSize = Number(lbl.size) || 18;
+        ctx.font = `700 ${fontSize}px Outfit, sans-serif`;
         const w = ctx.measureText(lbl.text).width;
-        const h = 20;
+        const h = fontSize + 8;
         if (pt.x >= lbl.x - 4 && pt.x <= lbl.x + w + 4 && pt.y >= lbl.y - 4 && pt.y <= lbl.y + h + 4) {
             ctx.restore();
             return i;
@@ -450,7 +462,8 @@ function strategyLoad() {
         text: String(l.text || ''),
         x: Number(l.x) || 20,
         y: Number(l.y) || 20,
-        color: String(l.color || '#ff4d4d')
+        color: String(l.color || '#ff4d4d'),
+        size: Number(l.size) || 18
     })).filter(l => l.text.trim().length > 0);
     strategyInkCtx.clearRect(0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
     if (!inkDataUrl) {
@@ -756,7 +769,8 @@ async function init() {
                             text: preset,
                             x: pt.x,
                             y: pt.y,
-                            color: colorInput ? colorInput.value : '#ff4d4d'
+                            color: colorInput ? colorInput.value : '#ff4d4d',
+                            size: strategyCurrentFontSize()
                         });
                         strategyComposite();
                         strategySave();
