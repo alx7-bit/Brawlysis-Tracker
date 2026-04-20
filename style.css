@@ -455,14 +455,14 @@ button {
 .strategy-inline-editor {
     position: absolute;
     z-index: 5;
-    min-width: 180px;
-    max-width: 320px;
-    padding: 0.35rem 0.55rem;
+    min-width: 120px;
+    max-width: 220px;
+    padding: 0.22rem 0.42rem;
     border-radius: 6px;
     border: 1px solid rgba(255,255,255,0.25);
     background: rgba(5, 8, 14, 0.9);
     color: #f8fafc;
-    font: 600 16px 'Outfit', sans-serif;
+    font: 600 14px 'Outfit', sans-serif;
     outline: none;
     box-shadow: 0 4px 18px rgba(0,0,0,0.4);
 }
