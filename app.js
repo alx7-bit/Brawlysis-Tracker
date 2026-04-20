@@ -271,7 +271,7 @@ let strategyDragOffset = { x: 0, y: 0 };
 let strategyInkCanvas = null;
 let strategyInkCtx = null;
 let strategyEditorEl = null;
-const STRATEGY_TEXT_SIZE_MAP = { sm: 15, md: 18, lg: 22 };
+const STRATEGY_TEXT_SIZE_MAP = { sm: 12, md: 14, lg: 17 };
 
 function strategyCurrentFontSize() {
     const sel = document.getElementById('strategy-text-size-select');
@@ -329,17 +329,17 @@ function strategyDrawLabels(ctx) {
         const fontSize = Number(lbl.size) || 18;
         ctx.font = `700 ${fontSize}px Outfit, sans-serif`;
         const textWidth = ctx.measureText(txt).width;
-        const padX = 8;
-        const padY = Math.max(4, Math.round(fontSize * 0.22));
+        const padX = 5;
+        const padY = Math.max(1, Math.round(fontSize * 0.1));
         const boxW = textWidth + padX * 2;
         const boxH = fontSize + padY * 2;
 
         // High-contrast chip to keep labels readable on any map texture.
         ctx.fillStyle = 'rgba(5, 8, 14, 0.82)';
         ctx.strokeStyle = lbl.color || '#ff4d4d';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        const r = 6;
+        const r = 3;
         const x = lbl.x - padX;
         const y = lbl.y - padY;
         ctx.moveTo(x + r, y);
@@ -461,13 +461,20 @@ function strategyLoad() {
     } catch {
         inkDataUrl = data;
     }
-    strategyLabels = labels.map(l => ({
-        text: String(l.text || ''),
-        x: Number(l.x) || 20,
-        y: Number(l.y) || 20,
-        color: String(l.color || '#ff4d4d'),
-        size: Number(l.size) || 18
-    })).filter(l => l.text.trim().length > 0);
+    strategyLabels = labels.map(l => {
+        const rawSize = Number(l.size);
+        // Auto-migrate older larger labels to the new compact sizing.
+        const migratedSize = Number.isFinite(rawSize)
+            ? Math.max(10, Math.min(17, Math.round(rawSize * 0.78)))
+            : 14;
+        return {
+            text: String(l.text || ''),
+            x: Number(l.x) || 20,
+            y: Number(l.y) || 20,
+            color: String(l.color || '#ff4d4d'),
+            size: migratedSize
+        };
+    }).filter(l => l.text.trim().length > 0);
     strategyInkCtx.clearRect(0, 0, strategyCanvasSize.width, strategyCanvasSize.height);
     if (!inkDataUrl) {
         strategyComposite();
@@ -570,6 +577,121 @@ function populateStrategyMaps() {
     if (strategyMapSelect.options.length) {
         strategyMapKey = strategyMapSelect.value;
         strategyMapImage.src = strategyMapSelect.selectedOptions[0].dataset.img || '';
+    }
+}
+
+function autoStrategyModeTemplate(modeName) {
+    const m = String(modeName || '').toLowerCase();
+    if (m.includes('brawl') && m.includes('ball')) {
+        return [
+            { text: 'Open: pressure side lane', x: 90, y: 120, color: '#22d3ee', size: 13 },
+            { text: 'Mid control -> quick pass chain', x: 330, y: 230, color: '#f59e0b', size: 13 },
+            { text: 'After pick: collapse + score', x: 650, y: 140, color: '#34d399', size: 13 },
+            { text: 'No feed: reset and defend goal line', x: 620, y: 360, color: '#f87171', size: 13 }
+        ];
+    }
+    if (m.includes('gem')) {
+        return [
+            { text: 'Early: gain mid brush vision', x: 120, y: 110, color: '#22d3ee', size: 13 },
+            { text: 'Gem carrier plays safe behind cover', x: 330, y: 240, color: '#f59e0b', size: 13 },
+            { text: 'Left/right lane pinch on reload timings', x: 570, y: 130, color: '#34d399', size: 13 },
+            { text: '10 gems: fall back and crossfire', x: 600, y: 360, color: '#f87171', size: 13 }
+        ];
+    }
+    if (m.includes('heist')) {
+        return [
+            { text: 'Split pressure: one lane, two hold mid', x: 90, y: 120, color: '#22d3ee', size: 13 },
+            { text: 'Secure bolts/picks before full commit', x: 300, y: 250, color: '#f59e0b', size: 13 },
+            { text: 'Cycle damage supers onto safe windows', x: 590, y: 130, color: '#34d399', size: 13 },
+            { text: 'If behind: ignore kills and race safe', x: 620, y: 360, color: '#f87171', size: 13 }
+        ];
+    }
+    if (m.includes('hot') && m.includes('zone')) {
+        return [
+            { text: 'Take zone with utility first', x: 120, y: 120, color: '#22d3ee', size: 13 },
+            { text: 'Control edges, do not over-chase', x: 350, y: 230, color: '#f59e0b', size: 13 },
+            { text: 'Trade % with staggered respawns', x: 590, y: 140, color: '#34d399', size: 13 },
+            { text: 'Anchor one lane to keep spawn trap', x: 620, y: 360, color: '#f87171', size: 13 }
+        ];
+    }
+    if (m.includes('knockout')) {
+        return [
+            { text: 'Play slow first 10s, hold angles', x: 120, y: 120, color: '#22d3ee', size: 13 },
+            { text: 'Mid pinch only with ammo advantage', x: 340, y: 245, color: '#f59e0b', size: 13 },
+            { text: 'After first pick: no solo peeks', x: 620, y: 140, color: '#34d399', size: 13 },
+            { text: 'Gas phase: group and trade focus fire', x: 600, y: 360, color: '#f87171', size: 13 }
+        ];
+    }
+    if (m.includes('bounty')) {
+        return [
+            { text: 'Prioritize star lead over risky pushes', x: 90, y: 120, color: '#22d3ee', size: 13 },
+            { text: 'Crossfire mid from split lanes', x: 320, y: 230, color: '#f59e0b', size: 13 },
+            { text: 'Backline holds long sightline', x: 620, y: 120, color: '#34d399', size: 13 },
+            { text: 'Lead? play timer, not ego peeks', x: 620, y: 360, color: '#f87171', size: 13 }
+        ];
+    }
+    return [
+        { text: 'Open for vision and info', x: 120, y: 130, color: '#22d3ee', size: 13 },
+        { text: 'Play around ammo + cooldowns', x: 340, y: 230, color: '#f59e0b', size: 13 },
+        { text: 'Coordinate pinch on first pick', x: 610, y: 140, color: '#34d399', size: 13 },
+        { text: 'Reset if down players', x: 610, y: 360, color: '#f87171', size: 13 }
+    ];
+}
+
+function autoStrategyMapOverride(mapName) {
+    const n = String(mapName || '').toLowerCase();
+    if (n.includes('center stage')) {
+        return [
+            { text: 'Center is high risk/high value: only take with support fire', x: 225, y: 220, color: '#f59e0b', size: 13 },
+            { text: 'Use side bushes for flanks then collapse center', x: 560, y: 120, color: '#22d3ee', size: 13 }
+        ];
+    }
+    if (n.includes('hard rock mine')) {
+        return [
+            { text: 'Contest mine early, then one hold + two lane pressure', x: 255, y: 230, color: '#f59e0b', size: 13 },
+            { text: 'Rotate through side ramps after gem advantage', x: 575, y: 130, color: '#22d3ee', size: 13 }
+        ];
+    }
+    if (n.includes("belle's rock")) {
+        return [
+            { text: 'Three-lane spacing; don\'t stack peeks', x: 245, y: 235, color: '#f59e0b', size: 13 },
+            { text: 'Abuse wall cover, pinch only after chip lead', x: 550, y: 130, color: '#22d3ee', size: 13 }
+        ];
+    }
+    return [];
+}
+
+function autoStrategyPayloadForMap(mapObj) {
+    const modeName = mapObj?.gameMode?.name || '';
+    const mapName = mapObj?.name || '';
+    const labels = [
+        ...autoStrategyModeTemplate(modeName),
+        ...autoStrategyMapOverride(mapName)
+    ];
+    return { ink: '', labels };
+}
+
+function strategyAutoFillAllMaps() {
+    if (!Array.isArray(rankedMaps) || rankedMaps.length === 0) {
+        alert('No ranked maps loaded yet. Try refreshing map data first.');
+        return;
+    }
+    const ok = confirm('Auto-fill strategies for all ranked maps? This will overwrite existing notes for those maps.');
+    if (!ok) return;
+    rankedMaps.forEach(m => {
+        const key = strategyMapKeyFor(m);
+        const payload = autoStrategyPayloadForMap(m);
+        localStorage.setItem(strategyStorageKey(key), JSON.stringify(payload));
+    });
+    if (strategyMapKey) strategyLoad();
+    const msg = document.getElementById('strategy-save-msg');
+    if (msg) {
+        msg.textContent = `Auto-filled ${rankedMaps.length} maps.`;
+        msg.style.display = 'block';
+        setTimeout(() => {
+            msg.style.display = 'none';
+            msg.textContent = 'Saved strategy for this map.';
+        }, 2200);
     }
 }
 
@@ -844,6 +966,8 @@ async function init() {
             strategyComposite();
             strategySave(true);
         });
+        const autoFillBtn = document.getElementById('strategy-autofill-btn');
+        if (autoFillBtn) autoFillBtn.addEventListener('click', strategyAutoFillAllMaps);
         const saveBtn = document.getElementById('strategy-save-btn');
         if (saveBtn) saveBtn.addEventListener('click', () => strategySave(true));
         const exportBtn = document.getElementById('strategy-export-btn');
