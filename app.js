@@ -452,8 +452,8 @@ function strategyLoad() {
     let labels = [];
     try {
         const parsed = JSON.parse(data);
-        if (parsed && typeof parsed === 'object' && parsed.ink) {
-            inkDataUrl = parsed.ink;
+        if (parsed && typeof parsed === 'object') {
+            inkDataUrl = typeof parsed.ink === 'string' ? parsed.ink : '';
             labels = Array.isArray(parsed.labels) ? parsed.labels : [];
         } else if (typeof parsed === 'string') {
             inkDataUrl = parsed;
