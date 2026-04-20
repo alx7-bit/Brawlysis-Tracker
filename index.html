@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brawl Stars Match Tracker</title>
+    <title>Brawlysis – Match Tracker</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
 </head>
@@ -12,7 +12,7 @@
         <!-- Sidebar Navigation -->
         <nav class="sidebar">
             <div class="logo">
-                <h2>Brawl<span>Stats</span></h2>
+                <h2>Brawl<span>ysis</span></h2>
             </div>
             <ul class="nav-links">
                 <li data-view="dashboard" class="active">Dashboard</li>
@@ -233,10 +233,10 @@
                             <label for="strategy-color">Color</label>
                             <input type="color" id="strategy-color" value="#ff4d4d" style="width:46px; height:40px; border:none; background:transparent; padding:0;">
                         </div>
-                        <button id="strategy-undo-btn" class="primary-btn" style="height:40px; background: linear-gradient(135deg, #475569, #334155);">Undo</button>
-                        <button id="strategy-clear-btn" class="danger-btn" style="height:40px;">Clear</button>
-                        <button id="strategy-save-btn" class="primary-btn" style="height:40px;">Save Notes</button>
-                        <button id="strategy-export-btn" class="primary-btn" style="height:40px; background: linear-gradient(135deg, #6d28d9, #7c3aed);">Export PNG</button>
+                        <button type="button" id="strategy-undo-btn" class="primary-btn strategy-toolbar-btn strategy-btn-muted">Undo</button>
+                        <button type="button" id="strategy-clear-btn" class="danger-btn strategy-toolbar-btn">Clear</button>
+                        <button type="button" id="strategy-save-btn" class="primary-btn strategy-toolbar-btn">Save Notes</button>
+                        <button type="button" id="strategy-export-btn" class="primary-btn strategy-toolbar-btn strategy-btn-export">Export PNG</button>
                     </div>
                     <div id="strategy-save-msg" style="color: var(--color-win); margin-bottom: 0.7rem; display:none;">Saved strategy for this map.</div>
                     <div class="strategy-board-wrap">
