@@ -641,18 +641,33 @@ function autoStrategyModeTemplate(modeName) {
 function autoStrategyMapOverride(mapName) {
     const n = String(mapName || '').toLowerCase();
     const webNotes = {
+        // Brawl Ball
         'center stage': [
-            'Web: center push is strong but punishable; push with support fire',
-            'Web: use side bushes for flank timings before committing ball'
+            'Web: center lane is fastest score path but high-risk; enter with support fire',
+            'Web: side bushes create flank windows - collapse center only after lane pressure'
         ],
-        'hard rock mine': [
-            'Web: mine control first, then rotate side ramps to deny flanks',
-            'Web: one gem hold + two lane pressure is safer than full stack mid'
+        'beach ball': [
+            'Web-pattern: win lane first, then pass through mid instead of solo dribbles',
+            'Web-pattern: hold one defender near goal line to stop instant counter-goals'
         ],
-        "belle's rock": [
-            'Web: three-lane spacing is key; avoid double peeking same lane',
-            'Web: play wall cover and pinch only after chip damage advantage'
+        'pinball dreams': [
+            'Web-pattern: use walls for bounce shots and safe chip before hard push',
+            'Web-pattern: rotate ball side-to-side to force enemy lane over-commit'
         ],
+        'sneaky fields': [
+            'Web-pattern: bush checks are mandatory before carrying ball through side lanes',
+            'Web-pattern: push with two up, one anchors midfield for reset'
+        ],
+        'spiraling out': [
+            'Web-pattern: control central curve first, then chain passes through open lane',
+            'Web-pattern: don’t stack same choke; split left/right to avoid team-wipe'
+        ],
+        'triple dribble': [
+            'Web-pattern: short controlled passes beat long solo carries on this map',
+            'Web-pattern: after pick, instantly collapse 3v2 before respawn cycle'
+        ],
+
+        // Gem Grab
         'double swoosh': [
             'Web: side bushes decide this map; clear/check before stepping mid',
             'Web: hold center vision while threatening both wing flanks'
@@ -661,41 +676,85 @@ function autoStrategyMapOverride(mapName) {
             'Web: center choke control > random dives; protect gem carrier path',
             'Web: rotate through bush lanes for safer gem resets'
         ],
+        'hard rock mine': [
+            'Web: mine control first; watch side ramps and rotate quickly after picks',
+            'Web: safer structure is 1 gem hold + 2 lane pressure, not 3 mid stack'
+        ],
         'undermine': [
             'Web: open mid + side-bush pressure; keep support near gem carrier',
-            'Web: split 1-2 around center walls to prevent pinches'
+            'Web: split 1-2 around center walls to prevent enemy pinch'
         ],
-        'safe zone': [
-            'Web: establish lane control first; safe damage windows come after picks',
-            'Web: keep one defender ready while two pressure objective'
-        ],
-        'hot potato': [
-            'Web: contest center objective early; coordinate push/defend roles',
-            'Web: mobility + sustain combo performs better than isolated dives'
-        ],
+
+        // Heist
         'bridge too far': [
             'Web: long-range cross-lane pressure is strongest here',
             'Web: punish overextends from bridge lane; rotate before full commit'
         ],
-        'out in the open': [
-            'Web: open sightlines favor sharpshooter crossfire',
-            'Web: use center bushes/water angles for quick peek-reset'
+        'hot potato': [
+            'Web: contest center early; assign roles (hold / flank / objective pressure)',
+            'Web: mobility + sustain pairings outperform isolated solo dives'
         ],
-        'new horizons': [
-            'Web: respect wall-break timing; map opens quickly after first supers',
-            'Web: prioritize angle control over hard chases'
+        'safe zone': [
+            'Web: establish lane control first; safe damage windows come after picks',
+            'Web: keep one defender anchored while two apply controlled pressure'
         ],
-        'flaring phoenix': [
-            'Web: control choke points and force enemies into predictable paths',
-            'Web: hold spacing and collapse only when you have utility advantage'
+        'kaboom canyon': [
+            'Web-pattern: chip safe only when side lanes are stabilized',
+            'Web-pattern: collapse as 2-3 players after first elimination, then reset'
+        ],
+
+        // Hot Zone
+        'dueling beetles': [
+            'Web-pattern: edge control beats center brawl - hold exits, deny re-entry',
+            'Web-pattern: cycle utility supers to force zone ticks while surviving'
+        ],
+        'open business': [
+            'Web-pattern: take first % with utility, not hard dives into open lanes',
+            'Web-pattern: one anchor + two contesters keeps pressure through respawns'
+        ],
+        'parallel plays': [
+            'Web-pattern: crossfire lane angles and avoid overchasing off zone',
+            'Web-pattern: stagger deaths; preserve at least one body in control area'
         ],
         'ring of fire': [
-            'Mode+web pattern: hold zone edges, not center overcommit',
-            'Mode+web pattern: stagger respawns and rotate with utility'
+            'Web: map compresses around center control - keep moving and adapt',
+            'Web: medium/long range support around bushes is stronger than full tank stack'
+        ],
+
+        // Knockout
+        "belle's rock": [
+            'Web: three-lane spacing is key; avoid double peeking same lane',
+            'Web: use wall cover and pinch only after chip advantage'
+        ],
+        'flaring phoenix': [
+            'Web: choke control and predictable pathing are core win conditions',
+            'Web: hold spacing and collapse only with utility/ammo advantage'
+        ],
+        'new horizons': [
+            'Web: respect wall-break timings - map becomes risky after first breaks',
+            'Web: prioritize angle control and safe trades over hard chases'
+        ],
+        'out in the open': [
+            'Web: very open map - constant movement and crossfire matter most',
+            'Web: use limited bush/water angles for peek-reset, not extended duels'
+        ],
+
+        // Bounty
+        'dry season': [
+            'Web-pattern: protect star lead and force enemies into open sightlines',
+            'Web-pattern: only push deep after confirmed lane advantage'
+        ],
+        'hideout': [
+            'Web-pattern: long-range spacing + info control around cover openings',
+            'Web-pattern: don’t give free picks peeking same angle twice'
+        ],
+        'layer cake': [
+            'Web-pattern: split lanes for crossfire, regroup only for secure cleanup',
+            'Web-pattern: rotate after shots to avoid predictable sniper lines'
         ],
         'shooting star': [
-            'Mode+web pattern: long lane crossfire and patient peeks win',
-            'Mode+web pattern: protect star lead; avoid risky trades late'
+            'Web: blue star + long sightline control is central win condition',
+            'Web: keep moving and protect lead - avoid late risky ego peeks'
         ]
     };
 
