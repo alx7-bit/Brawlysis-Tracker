@@ -1324,14 +1324,23 @@ async function init() {
     const savedCollection = JSON.parse(localStorage.getItem('brawl_collection_data')) || [];
     if (savedCollection.length > 0) renderCollection(savedCollection);
     
-    // Initial fetch logs & start auto-sync loop (45s interval for reliability)
+    // Initial fetch logs & start auto-sync loop.
     if (officialApiKey) {
         syncBattlelog();
         fetchLiveProfile(); // Also refresh profile on load
     }
+    // Backfill any games collected in the background (GitHub Action) while the site was
+    // closed. Runs once game data is ready so brawler/map mapping is available.
+    fetchBrawlersOnce().then(() => loadArchivedBattlelog());
+    // Supercell's battlelog only returns the last ~25 battles per request, so we poll
+    // frequently (every 15s) to capture every game before it rolls out of that window.
     setInterval(() => {
         if (officialApiKey) syncBattlelog();
-    }, 45000); // Poll every 45 seconds for matched games
+    }, 15000);
+
+    // Re-check the background archive periodically (matches the Action's 5-min cadence) so
+    // games collected server-side show up even if this browser's own API key/IP can't sync.
+    setInterval(() => loadArchivedBattlelog(), 300000);
     
     // Refresh profile/collection every 3 minutes
     setInterval(() => {
@@ -2276,10 +2285,29 @@ function purgeNonRotationMatches(silent = false) {
 // ======================================
 let lastSyncTime = null;
 
-async function syncBattlelog() {
+/**
+ * Pulls the background-collected battlelog archive (written by the GitHub Action every few
+ * minutes) and feeds it through the normal sync pipeline. This backfills games played while
+ * the site was closed. Safe to call repeatedly — matches de-duplicate by id.
+ */
+async function loadArchivedBattlelog() {
+    try {
+        const res = await fetch(`data/battlelog.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const items = Array.isArray(data) ? data : (Array.isArray(data.items) ? data.items : []);
+        if (!items.length) return;
+        await syncBattlelog(items);
+    } catch (err) {
+        console.warn('[Archive] Could not load background battlelog:', err);
+    }
+}
+
+async function syncBattlelog(injectedItems = null) {
     if (isSyncing) return;
     if (!userProfile || !userProfile.tag) {
-        alert("Please link your account at the top first!");
+        // Silent when ingesting the background archive; only nag on a manual/live sync.
+        if (!injectedItems) alert("Please link your account at the top first!");
         return;
     }
 
@@ -2304,8 +2332,12 @@ async function syncBattlelog() {
     
     try {
         let items = [];
-        
-        if (officialApiKey === 'SANDBOX_TEST') {
+
+        if (injectedItems) {
+            // Background-archive ingestion: process these raw battlelog entries through the
+            // exact same pipeline as a live sync (single source of truth for classification).
+            items = injectedItems;
+        } else if (officialApiKey === 'SANDBOX_TEST') {
             // Fake Mock Data for Sandbox
             const modes = ['brawlBall', 'gemGrab', 'heist', 'knockout', 'bounty', 'hotZone'];
             const maps = ['Center Stage', 'Hard Rock Mine', 'Hot Potato', 'Flaring Phoenix', 'Shooting Star', 'Ring of Fire'];

@@ -1,0 +1,47 @@
+name: Sync Brawl Stars battlelog
+
+on:
+  # GitHub's minimum cron interval is 5 minutes. A ranked game takes ~3-4 min and the API
+  # keeps your last ~25 battles, so every 5 minutes never misses a game for normal play.
+  schedule:
+    - cron: "*/5 * * * *"
+  # Allow running it by hand from the Actions tab.
+  workflow_dispatch:
+
+# Prevent overlapping runs from racing on the commit.
+concurrency:
+  group: battlelog-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch latest battles
+        env:
+          BS_API_KEY: ${{ secrets.BS_API_KEY }}
+          BS_PLAYER_TAG: ${{ secrets.BS_PLAYER_TAG }}
+        run: node scripts/sync-battlelog.mjs
+
+      - name: Commit updated data
+        run: |
+          git config user.name "battlelog-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if [ -n "$(git status --porcelain data/battlelog.json)" ]; then
+            git add data/battlelog.json
+            git commit -m "chore: update battlelog archive [skip ci]"
+            git push
+          else
+            echo "No changes to commit."
+          fi
